@@ -78,3 +78,81 @@
 
 - 使用隱含預設補齊 config：可能意外執行 live scanner 或 sandbox install，已拒絕。
 - 只回傳 process error 不產生 decision artifact：會破壞 evidence traceability，已拒絕。
+
+## Phase 2 本機工具與 hosted API 驗證紀錄（2026-05-27）
+
+### Snyk / Socket CLI flags 與 fallback 行為
+
+**本機確認日期**: 2026-05-27T04:19:06+08:00。
+
+**本機命令與觀察結果**:
+
+| Tool | Command | Observed behavior | Phase 2 decision impact |
+|------|---------|-------------------|-------------------------|
+| Snyk | `snyk --version` | `command not found: snyk` | live Snyk 為 optional runtime dependency；本機未安裝時不得阻擋 fixture-first demo，但 live mode 應產生 `manual_review` 或 fallback 到 sanitized fixture evidence。 |
+| Snyk | `snyk test --help` | `command not found: snyk` | 無法本機確認目前 CLI flags；實作 adapter 必須隔離 CLI invocation，並以 fixture mode 作為可重現路徑。 |
+| Socket | `socket --version` | `command not found: socket` | live Socket 為 optional runtime dependency；本機未安裝時不得阻擋 fixture-first demo。 |
+| Socket | `socket scan create --help` | `command not found: socket` | 無法本機確認目前 CLI flags；保留官方文件命令作為 live adapter 預期，並要求 runtime evidence 記錄 unavailable。 |
+| Socket | `socket ci --help` | `command not found: socket` | 無法本機確認 exit code；Supervisor 僅可依 sanitized fixture 或 adapter classification table 判斷。 |
+
+**官方文件依據**:
+
+- Snyk CLI `test`: <https://docs.snyk.io/developer-tools/snyk-cli/commands/test>
+- Socket scan: <https://docs.socket.dev/docs/socket-scan>
+- Socket CI: <https://docs.socket.dev/docs/socket-ci>
+
+**Socket exit-code classification table**:
+
+| Classification | Example source | Supervisor status | Required evidence |
+|----------------|----------------|-------------------|-------------------|
+| `policy_failure` | `socket ci` policy/security/license failure 或 fixture 中明確 policy violation | `deny` | sanitized command summary、exit code、policy reason 或 fixture path |
+| `auth_or_network_unavailable` | CLI 未登入、token 缺失、DNS/TLS/service unavailable | `manual_review`，若 config 提供對應 sanitized fixture report 則 fallback 並標示 `live_unavailable` | start/end time、exit code/stderr classification、fixture fallback path（若有） |
+| `parse_or_schema_error` | JSON 無法解析或缺少必要欄位 | `manual_review` | parser error、source path、sanitized raw summary（不可保存 raw log） |
+| `timeout` | live command 超過 120 秒 | `manual_review` | start/end time、timeout reason、sanitized command summary |
+| `unknown_exit_code` | 無法映射的非 0 exit code | `manual_review` | exit code、sanitized command summary、next action |
+
+**Fallback 規則**: live Snyk/Socket unavailable 時，若 demo config 提供 sanitized fixture report，Supervisor 可使用 fixture evidence 完成決策並在 evidence reasons 標示 `live_unavailable`；若缺少 fixture 或 scanner mode 為 `skip` 且無其他明確 deny，輸出 `manual_review` 並將對應 gate 放入 `missing_gates`。
+
+### OpenShell / NemoClaw CLI、policy schema 與 OrbStack readiness
+
+**本機確認日期**: 2026-05-27T04:19:06+08:00。
+
+**本機命令與觀察結果**:
+
+| Tool | Command | Observed behavior | Phase 2 decision impact |
+|------|---------|-------------------|-------------------------|
+| OpenShell | `openshell --version` / `openshell --help` | `command not found: openshell` | live sandbox mode 不可執行；不得 host fallback；需使用 sanitized fixture 或 manual verification path 產生 `manual_review`。 |
+| NemoClaw | `nemoclaw --version` / `nemoclaw --help` | `command not found: nemoclaw` | 無法本機確認 NemoClaw wrapper flags；實作不得硬編未驗證 flags。 |
+| OrbStack | `orb version` | `Version: 2.1.3 (2010300)`，commit `7a3258b...` | OrbStack CLI 存在，但 OpenShell/NemoClaw 缺失時 readiness 仍失敗。 |
+| Docker | `docker --version` | `Docker version 29.4.0, build 9d7ad9f` | 僅作 OrbStack Docker-compatible runtime readiness 訊號；不得回退為未經 spec 授權的一般 Docker flow。 |
+
+**官方文件依據**:
+
+- OpenShell policy schema reference: <https://docs.nvidia.com/openshell/reference/policy-schema>
+- OpenShell network policy tutorial: <https://docs.nvidia.com/openshell/latest/get-started/tutorials/first-network-policy>
+
+**Policy schema 觀察**: OpenShell policy YAML top-level 包含 `version`、`filesystem_policy`、`landlock`、`process`、`network_policies`。filesystem policy path 必須為 absolute path、不得包含 `..` traversal，且未列入 read-only/read-write 的 path 應視為不可存取；network policies 用於定義 binary 可連線目標，因此本 PoC policy 應 default-deny egress，並只允許合成測試目的地的阻擋證據被記錄。由於本機未安裝 OpenShell/NemoClaw，Phase 2 不硬編 sandbox command flags，僅保留 adapter/readiness 安全失敗行為。
+
+**Host fallback 禁止**: live sandbox readiness 需要 OrbStack/Docker-compatible runtime 與 OpenShell/NemoClaw 皆可用；缺任一項時輸出 `manual_review`，不得執行 host `npm install`，不得改用未經 spec 明確授權的一般 Docker runtime。
+
+### NVIDIA Nemotron hosted API 驗證
+
+**本機確認日期**: 2026-05-27T04:19:06+08:00。
+
+**官方文件依據**:
+
+- NVIDIA NIM LLM API Reference: <https://docs.nvidia.com/nim/large-language-models/2.0.5/reference/api-reference.html>
+- NVIDIA Build model card: <https://build.nvidia.com/nvidia/nemotron-3-nano-30b-a3b/modelcard>
+
+**官方文件觀察**: NVIDIA NIM LLM API Reference 說明 NIM exposes OpenAI-compatible inference endpoints，包含 `POST /v1/chat/completions`、`POST /v1/completions` 與 `GET /v1/models`。Build model card 顯示模型 ID `nvidia/nemotron-3-nano-30b-a3b`，且模型定位為可下載/部署的 NVIDIA Nemotron 3 Nano 30B A3B model。
+
+**本機 smoke/manual check**:
+
+| Check | Command summary | Observed behavior | Decision |
+|-------|-----------------|-------------------|----------|
+| Models endpoint | `GET https://integrate.api.nvidia.com/v1/models`（未帶 token） | HTTP `200`，response model list 包含 `nvidia/nemotron-3-nano-30b-a3b` | 保留 plan 暫定預設 `NEMOTRON_BASE_URL=https://integrate.api.nvidia.com/v1` 與 `NEMOTRON_MODEL=nvidia/nemotron-3-nano-30b-a3b`。 |
+| Authenticated chat completion | `POST /v1/chat/completions` with `Authorization: Bearer $NVIDIA_API_KEY` | 本機未提供 `NVIDIA_API_KEY`，未執行 authenticated request | Worker provider 應輸出 sanitized provider failure evidence，然後依序 fallback：`codex_subagent` -> `claude_subagent` -> `manual_review`。 |
+
+**必要 headers 與 redaction**: live request 必須使用 `Content-Type: application/json` 與 `Authorization: Bearer $NVIDIA_API_KEY`；任何 artifact、error、command summary、agent invocation evidence 不得保存 token 值，需將 bearer/API key value 替換為 `[REDACTED]`。
+
+**Timeout/error response 規則**: 每個 provider attempt 預設 `timeout_seconds=60`。401/403、429、5xx、timeout、JSON parse failure 或 missing `NVIDIA_API_KEY` 均產生 provider failure evidence；Worker provider failure 只能支援 `manual_review` 或 fallback evidence，不能直接改判 Supervisor `allow`/`deny`。

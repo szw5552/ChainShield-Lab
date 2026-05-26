@@ -245,3 +245,29 @@ Evidence: <sanitized log path>
 Runtime: <start/end timestamp，應小於 5 分鐘或明確失敗>
 Reviewer: <initials 或角色，不放個人秘密>
 ```
+
+
+## Phase 2 Nemotron 驗證摘要
+
+經 Phase 2（2026-05-27）驗證後的預設設定：
+
+```sh
+export NEMOTRON_BASE_URL="https://integrate.api.nvidia.com/v1"
+export NEMOTRON_MODEL="nvidia/nemotron-3-nano-30b-a3b"
+export NVIDIA_API_KEY="<do-not-commit>"
+```
+
+官方驗證來源與本機 smoke 摘要：
+
+- NVIDIA Build model card: `https://build.nvidia.com/nvidia/nemotron-3-nano-30b-a3b/modelcard`
+- NVIDIA LLM NIM API Reference: `https://docs.nvidia.com/nim/large-language-models/2.0.5/reference/api-reference.html`
+- 本機 `GET https://integrate.api.nvidia.com/v1/models`（未帶 token）於 2026-05-27 回傳 HTTP `200`，model list 包含 `nvidia/nemotron-3-nano-30b-a3b`。
+- 本機未設定 `NVIDIA_API_KEY`，因此未執行 authenticated `POST /v1/chat/completions`；live Worker 應將此狀態記為 sanitized provider failure evidence，並 fallback 到 `codex_subagent` -> `claude_subagent` -> `manual_review`。
+
+
+## Phase 2 工具驗證摘要（2026-05-27）
+
+- 本機未安裝 `snyk`、`socket`、`openshell` 或 `nemoclaw`；fixture-first demo 仍可執行，live mode 必須輸出 unavailable/`manual_review` evidence 或使用 sanitized fixture fallback。
+- 本機 `orb version` 顯示 OrbStack `2.1.3 (2010300)`，`docker --version` 顯示 Docker `29.4.0`；但 OpenShell/NemoClaw 缺失時 live sandbox readiness 仍必須失敗，且不得 host fallback。
+- Socket exit-code classification 以 `policy_failure -> deny`、`auth_or_network_unavailable -> manual_review`、`parse_or_schema_error -> manual_review`、`timeout -> manual_review`、`unknown_exit_code -> manual_review` 為 Phase 2 adapter 基準。
+- OpenShell policy schema 以 `version`、`filesystem_policy`、`landlock`、`process`、`network_policies` 為已查證 top-level 結構；未驗證本機 CLI flags 前不得硬編 sandbox command。
