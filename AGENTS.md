@@ -39,8 +39,11 @@
 - Include performance or runtime expectations for scanner, install, sandbox, and report-processing flows, or explicitly mark them not applicable with rationale.
 
 <!-- SPECKIT START -->
+Current implementation plan: `specs/001-orbstack-sandbox-gates/plan.md`.
+
 For additional context about technologies to be used, project structure,
-shell commands, and other important information, read the current plan.
+shell commands, and other important information, read the current plan before
+implementation.
 
 Spec Kit user-facing artifacts such as spec.md, plan.md, tasks.md,
 research.md, data-model.md, quickstart.md, and checklists must be written in

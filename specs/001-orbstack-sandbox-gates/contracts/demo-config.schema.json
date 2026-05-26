@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chainshield-lab.local/contracts/demo-config.schema.json",
+  "title": "ChainShield Demo Config",
+  "description": "版本控管的展示設定檔；不得包含 token、憑證或真實秘密。",
+  "type": "object",
+  "required": ["version", "request_id", "package_manager", "scanner_mode", "sandbox_mode", "fixtures", "outputs", "safety"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "type": "integer", "const": 1 },
+    "request_id": { "type": "string", "minLength": 1 },
+    "package_manager": { "type": "string", "const": "npm" },
+    "scanner_mode": {
+      "type": "object",
+      "required": ["snyk", "socket"],
+      "additionalProperties": false,
+      "properties": {
+        "snyk": { "type": "string", "enum": ["fixture", "live", "skip"] },
+        "socket": { "type": "string", "enum": ["fixture", "live", "skip"] }
+      }
+    },
+    "sandbox_mode": { "type": "string", "enum": ["disabled", "fixture", "live"] },
+    "fixtures": {
+      "type": "object",
+      "required": ["poc_app", "malicious_package", "snyk_report", "socket_report", "openshell_log", "canary_secret"],
+      "additionalProperties": false,
+      "properties": {
+        "poc_app": { "type": "string", "minLength": 1 },
+        "malicious_package": { "type": "string", "minLength": 1 },
+        "snyk_report": { "type": ["string", "null"] },
+        "socket_report": { "type": ["string", "null"] },
+        "openshell_log": { "type": ["string", "null"] },
+        "canary_secret": { "type": ["string", "null"] }
+      }
+    },
+    "outputs": {
+      "type": "object",
+      "required": ["decision_json", "markdown_summary"],
+      "additionalProperties": false,
+      "properties": {
+        "decision_json": { "type": "string", "minLength": 1 },
+        "markdown_summary": { "type": ["string", "null"] }
+      }
+    },
+    "safety": {
+      "type": "object",
+      "required": ["allow_static_gate_bypass", "synthetic_egress_target"],
+      "additionalProperties": false,
+      "properties": {
+        "allow_static_gate_bypass": { "type": "boolean" },
+        "synthetic_egress_target": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}
