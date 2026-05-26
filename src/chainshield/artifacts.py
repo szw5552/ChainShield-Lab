@@ -80,3 +80,52 @@ def write_json_artifact(path: str | Path, payload: Any) -> None:
     if not result.safe:
         raise ArtifactWriteError("refusing to save unsanitized artifact: " + ", ".join(result.reasons))
     atomic_write_text(target, text + "\n")
+
+
+def render_markdown_summary(decision: dict[str, Any]) -> str:
+    missing = decision.get("missing_gates") or ["none"]
+    next_actions = decision.get("next_actions") or ["No next action recorded."]
+    reasons = decision.get("primary_reasons") or ["No primary reason recorded."]
+    artifacts = decision.get("artifacts") or {}
+    lines = [
+        f"# ChainShield Decision: {decision['decision']}",
+        "",
+        f"Result: `{decision['decision']}`",
+        "Primary reasons: " + "; ".join(reasons),
+        "Missing gates: " + ", ".join(missing),
+        "Next actions: " + "; ".join(next_actions),
+        "",
+        "## Gate Evidence",
+    ]
+    for item in decision.get("gate_results", []):
+        source = item.get("source_path") or "none"
+        lines.append(f"- {item.get('gate')}: {item.get('status')} ({item.get('risk_level')}) from `{source}`")
+        for reason in item.get("reasons", []):
+            lines.append(f"  - {reason}")
+
+    lines.extend(["", "## Agent Invocations"])
+    invocations = decision.get("agent_invocations", [])
+    if invocations:
+        for item in invocations:
+            lines.append(
+                f"- {item.get('provider')}: {item.get('status')} finding={item.get('finding_status')} "
+                f"boundary_violation={item.get('boundary_violation')}"
+            )
+    else:
+        lines.append("- none")
+
+    lines.extend(
+        [
+            "",
+            "## Artifacts",
+            f"- Decision JSON: `{artifacts.get('decision_json')}`",
+            f"- Markdown summary: `{artifacts.get('markdown_summary')}`",
+            "- Reports: " + ", ".join(f"`{item}`" for item in artifacts.get("reports", [])) if artifacts.get("reports") else "- Reports: none",
+            "- Logs: " + ", ".join(f"`{item}`" for item in artifacts.get("logs", [])) if artifacts.get("logs") else "- Logs: none",
+            "- Worker: " + ", ".join(f"`{item}`" for item in artifacts.get("worker", [])) if artifacts.get("worker") else "- Worker: none",
+            "",
+            "## Scope Disclaimer",
+            "Demo-only npm supply-chain defense PoC; not a production CI/CD rollout, SOC/SIEM integration, or general malware-analysis framework.",
+        ]
+    )
+    return "\n".join(lines) + "\n"

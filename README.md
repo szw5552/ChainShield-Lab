@@ -44,24 +44,23 @@ ChainShield Lab 是一個展示型 PoC，用來示範如何用 AI Agent 編排�
 ## 核心元件
 
 - **Supervisor Agent**：接收使用者安裝或評估需求，讀取 Snyk / Socket 報告，套用 gate 規則後決定放行或拒絕。
-- **Worker Agent**：在受控環境中執行掃描、打包、安裝與 log 收集任務。
+- **Worker Agent**：只讀取 sanitized task packet 與 artifact refs，產生 evidence summary；不直接執行掃描、sandbox、shell 或 host lifecycle command。
 - **Snyk CLI**：偵測已知 CVE 與高風險 dependency 版本。
 - **Socket.dev CLI**：掃描 dependency metadata 與組織 security / license policy 風險。
 - **NVIDIA NemoClaw / OpenShell**：提供 sandbox 執行、filesystem allowlist、出站網路控管與 deny log。
-- **Nemotron Worker**：在 sandbox flow 中執行工具任務並收集證據。
+- **Nemotron Worker**：彙整 sanitized artifact refs 並輸出 Worker evidence summary；最終決策仍由 Supervisor 套用 deterministic gate rules。
 
 ## Nemotron Model 選型
 
 目前 PoC 建議使用 **Nemotron 3 Nano** 作為 Worker model。
 
-此專案中的 Nemotron Worker 主要負責工具型任務：
+此專案中的 Nemotron Worker 主要負責 evidence summary 任務：
 
-- 執行 `snyk test`。
-- 執行 `socket scan create` 或 `socket ci`。
-- 執行 `npm pack`、`npm install`。
-- 操作 OpenShell sandbox。
-- 收集 Snyk / Socket report 與 OpenShell deny log。
-- 將工具輸出與 log 回傳給 Supervisor。
+- 讀取 sanitized worker task packet。
+- 檢查 Snyk / Socket report 與 OpenShell deny log 的 artifact refs。
+- 產生 `finding_status=clear|concern|inconclusive` 的 Worker evidence summary。
+- 在 provider unavailable 時提供可追蹤 fallback evidence。
+- 將摘要回傳給 Supervisor；不得要求或執行 shell、scanner、sandbox 或 host lifecycle command。
 
 這些工作偏向 command execution、log collection 與輕量摘要，不需要由 Worker 承擔複雜安全推理。因此目前架構會把主要判斷責任放在 **Claude / Codex Supervisor**，由 Supervisor 彙整報告後決定 `allow` 或 `deny`。
 
@@ -74,9 +73,9 @@ Claude / Codex Supervisor
   - 產生 deny reason 與 next action
 
 Nemotron 3 Nano Worker
-  - 執行掃描命令
-  - 操作 sandbox install
-  - 收集 reports / logs
+  - 讀取 sanitized task packet
+  - 彙整 reports / logs refs
+  - 產生 Worker evidence summary
 ```
 
 只有在 Nemotron 需要承擔較重的推理角色時，才建議升級為 **Nemotron 3 Super**。例如：
@@ -106,11 +105,11 @@ Nemotron 3 Nano Worker
 ## 環境需求
 
 - macOS Apple Silicon。
-- Docker Desktop 或 Colima，用於支援 NemoClaw / OpenShell sandbox stack。
-- Node.js 與 npm。
-- 可執行的 `openshell` 與 `nemoclaw` CLI。
-- 已登入的 Snyk CLI。
-- 已登入的 Socket CLI。
+- Python 3.11+ 與本專案測試相依套件。
+- Node.js 20+ 與 npm 10+。
+- Fixture-first demo 不需要登入 Snyk、Socket、NVIDIA API 或啟動 OrbStack。
+- Live scanner mode 才需要已登入的 Snyk CLI 與 Socket CLI。
+- Live sandbox mode 才需要 OrbStack、Docker 相容 runtime 與可執行的 OpenShell/NemoClaw CLI；不得 fallback 到宿主機 `npm install`。
 
 安裝並登入掃描工具：
 
@@ -121,6 +120,45 @@ snyk auth
 npm install -g socket
 socket login
 ```
+
+## Fixture-First Demo
+
+所有 demo config 均只引用 repository-local sanitized fixtures，並將 runtime output 寫入 `/reports/`。若 output path 已存在，CLI 會拒絕覆寫並要求使用新的 output path。
+
+```bash
+.venv/bin/python -m chainshield.cli evaluate --config fixtures/configs/demo-fixture-deny.json
+.venv/bin/python -m chainshield.cli evaluate --config fixtures/configs/demo-fixture-allow.json
+.venv/bin/python -m chainshield.cli evaluate --config fixtures/configs/demo-fixture-manual-review.json
+```
+
+預期結果：
+
+- `demo-fixture-deny.json`：Snyk high/critical 或 Socket unhealthy/policy/malware evidence 造成 `deny`，不進入 sandbox install。
+- `demo-fixture-allow.json`：Snyk 與 Socket sanitized fixture 皆通過，且未執行 sandbox demo，因此可輸出 deterministic `allow`。
+- `demo-fixture-manual-review.json`：Socket gate 被 `skip`，輸出 `manual_review`、`missing_gates=["socket"]`，下一步要求補齊 sanitized evidence/config 並重新執行 Supervisor。
+- Markdown 摘要頂部固定顯示 result、主要理由、缺失 gate 與下一步，供審查者不重跑 demo 時在 30 秒內辨識核心資訊。
+
+## Worker Provider Demo
+
+Worker provider 只產生 sanitized evidence summary，不執行 shell、scanner、sandbox 或 host lifecycle command，也不能覆寫 Snyk、Socket、OpenShell 的 deterministic gate rules。
+
+```bash
+export NVIDIA_API_KEY="<set-in-shell-only>"
+export NEMOTRON_BASE_URL="${NEMOTRON_BASE_URL:-https://integrate.api.nvidia.com/v1}"
+export NEMOTRON_MODEL="${NEMOTRON_MODEL:-nvidia/nemotron-3-nano-30b-a3b}"
+
+.venv/bin/python -m chainshield.cli evaluate --config fixtures/configs/demo-worker-nemotron.json
+.venv/bin/python -m chainshield.cli evaluate --config fixtures/configs/demo-worker-fallback.json
+```
+
+Worker evidence rules:
+
+- Canonical provider chain 為 `nemotron_api` -> `codex_subagent` -> `claude_subagent` -> `manual_review`。
+- Primary provider failure 後的 fallback order 固定為 `codex_subagent` -> `claude_subagent` -> `manual_review`。
+- 每次 provider attempt 預設 timeout 為 60 秒。
+- `finding_status=clear` 只在 Snyk、Socket 與必要 OpenShell gate 都通過時支援 `allow`。
+- `finding_status=concern`、`inconclusive`、缺失 worker evidence、provider unavailable 或 boundary violation 皆導向 `manual_review`，不得直接形成 `deny`。
+- 若 Worker output 要求執行 `npm install`、`postinstall`、Snyk/Socket/OpenShell command 或未授權 tool invocation，Supervisor 會記錄 boundary violation evidence 並拒絕採用該 output。
 
 ## 建議目錄結構
 

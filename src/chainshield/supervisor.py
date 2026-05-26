@@ -7,6 +7,8 @@ from typing import Any, Iterable
 from .config import WorkerProviderConfig
 
 STATIC_GATES = ("snyk", "socket")
+ALLOW_SOURCE_KINDS = {"fixture", "live"}
+REQUIRED_OPENSHELL_EVENTS = {"filesystem_read", "network_egress"}
 
 
 def default_artifacts() -> dict[str, Any]:
@@ -85,6 +87,98 @@ def _evidence_dict(item: GateEvidence | dict[str, Any]) -> dict[str, Any]:
     return item.to_dict() if isinstance(item, GateEvidence) else dict(item)
 
 
+def _manual_review(
+    *,
+    summary: str,
+    reasons: list[str],
+    results: list[dict[str, Any]],
+    missing: list[str],
+    request_id: str,
+    run_id: str,
+    artifacts: dict[str, Any] | None,
+    worker_provider: WorkerProviderConfig | None,
+    agent_invocations: list[dict[str, Any]] | None = None,
+) -> SupervisorDecision:
+    return SupervisorDecision(
+        decision="manual_review",
+        summary=summary,
+        primary_reasons=reasons or ["Evidence is insufficient for an allow decision."],
+        gate_results=results,
+        agent_invocations=agent_invocations or [],
+        missing_gates=list(dict.fromkeys(missing)),
+        next_actions=[
+            "Provide updated sanitized evidence/config and rerun Supervisor.",
+            "Use a new output path; do not manually rewrite an existing manual_review decision into allow.",
+            "Do not run npm lifecycle scripts on the host.",
+        ],
+        request_id=request_id,
+        run_id=run_id,
+        artifacts=artifacts or default_artifacts(),
+        worker_provider=(worker_provider or WorkerProviderConfig()).to_decision_metadata(),
+    )
+
+
+def _conflicting_static_gates(results: list[dict[str, Any]]) -> tuple[list[str], list[str]]:
+    reasons: list[str] = []
+    missing: list[str] = []
+    for gate in STATIC_GATES:
+        statuses = {item.get("status") for item in results if item.get("gate") == gate}
+        if len(statuses) > 1:
+            missing.append(gate)
+            reasons.append(f"{gate} evidence has conflicting statuses: {', '.join(sorted(str(item) for item in statuses))}")
+    return reasons, missing
+
+
+def _openshell_sufficient(item: dict[str, Any] | None) -> tuple[bool, list[str]]:
+    if item is None:
+        return True, []
+    reasons: list[str] = []
+    if item.get("status") != "pass":
+        reasons.extend(item.get("reasons") or ["OpenShell containment evidence did not pass."])
+    if item.get("source_kind") not in ALLOW_SOURCE_KINDS:
+        reasons.append("OpenShell evidence must be live or fixture to support allow.")
+    events = item.get("containment_events")
+    if not isinstance(events, list):
+        reasons.append("OpenShell containment events are missing.")
+        return False, reasons
+    present = {event.get("event_type") for event in events if isinstance(event, dict) and event.get("result") == "blocked"}
+    missing = REQUIRED_OPENSHELL_EVENTS - present
+    for event_type in sorted(missing):
+        reasons.append(f"OpenShell containment evidence missing {event_type}.")
+    return not reasons, reasons
+
+
+def _worker_sufficient(
+    *,
+    worker_provider: WorkerProviderConfig | None,
+    agent_invocations: list[dict[str, Any]] | None,
+) -> tuple[bool, list[str]]:
+    provider = worker_provider or WorkerProviderConfig()
+    if not provider.enabled:
+        return True, []
+    invocations = agent_invocations or []
+    if not invocations:
+        return False, ["Worker provider is enabled but no agent invocation evidence is present."]
+    reasons: list[str] = []
+    for item in invocations:
+        if item.get("boundary_violation") is True:
+            reasons.extend(item.get("boundary_violation_reasons") or ["Worker output requested unsafe execution."])
+    clear = [
+        item
+        for item in invocations
+        if item.get("status") == "pass" and item.get("finding_status") == "clear" and item.get("boundary_violation") is not True
+    ]
+    if clear and not reasons:
+        return True, []
+    for item in invocations:
+        finding = item.get("finding_status")
+        if finding in {"concern", "inconclusive"}:
+            reasons.append(f"Worker provider returned {finding}; allow requires clear.")
+        reasons.extend(item.get("missing_evidence") or [])
+        reasons.extend(item.get("errors") or [])
+    return False, reasons or ["Worker provider did not produce clear evidence."]
+
+
 def decide_static_gates(
     gate_results: Iterable[GateEvidence | dict[str, Any]],
     *,
@@ -94,6 +188,7 @@ def decide_static_gates(
     run_id: str = "run-foundation",
     artifacts: dict[str, Any] | None = None,
     worker_provider: WorkerProviderConfig | None = None,
+    agent_invocations: list[dict[str, Any]] | None = None,
 ) -> SupervisorDecision:
     results = [_evidence_dict(item) for item in gate_results]
     by_gate = {item["gate"]: item for item in results if item.get("gate") in STATIC_GATES}
@@ -110,11 +205,26 @@ def decide_static_gates(
             summary="Static dependency gate denied the request.",
             primary_reasons=reasons,
             gate_results=results,
+            agent_invocations=agent_invocations or [],
             next_actions=next_actions,
             request_id=request_id,
             run_id=run_id,
             artifacts=artifacts or default_artifacts(),
             worker_provider=(worker_provider or WorkerProviderConfig()).to_decision_metadata(),
+        )
+
+    conflict_reasons, conflict_missing = _conflicting_static_gates(results)
+    if conflict_reasons:
+        return _manual_review(
+            summary="Static dependency gate evidence is conflicting.",
+            reasons=conflict_reasons,
+            results=results,
+            missing=conflict_missing,
+            request_id=request_id,
+            run_id=run_id,
+            artifacts=artifacts,
+            worker_provider=worker_provider,
+            agent_invocations=agent_invocations,
         )
 
     missing: list[str] = []
@@ -130,19 +240,56 @@ def decide_static_gates(
         elif item.get("status") in {"manual_review", "skipped"}:
             missing.append(gate)
             reasons.extend(item.get("reasons") or [f"{gate} requires manual review"])
+        elif item.get("status") != "pass":
+            missing.append(gate)
+            reasons.append(f"{gate} status {item.get('status')} cannot support allow")
+        elif item.get("source_kind") not in ALLOW_SOURCE_KINDS:
+            missing.append(gate)
+            reasons.append(f"{gate} evidence source_kind must be live or fixture to support allow")
+        elif item.get("sanitized") is not True:
+            missing.append(gate)
+            reasons.append(f"{gate} evidence must be sanitized")
 
     if missing:
-        return SupervisorDecision(
-            decision="manual_review",
+        return _manual_review(
             summary="Static dependency gate requires manual review.",
-            primary_reasons=reasons or ["missing static gate evidence"],
-            gate_results=results,
-            missing_gates=missing,
-            next_actions=["Provide sanitized Snyk and Socket evidence before allowing install."],
+            reasons=reasons or ["missing static gate evidence"],
+            results=results,
+            missing=missing,
             request_id=request_id,
             run_id=run_id,
-            artifacts=artifacts or default_artifacts(),
-            worker_provider=(worker_provider or WorkerProviderConfig()).to_decision_metadata(),
+            artifacts=artifacts,
+            worker_provider=worker_provider,
+            agent_invocations=agent_invocations,
+        )
+
+    openshell = next((item for item in results if item.get("gate") == "openshell"), None)
+    openshell_ok, openshell_reasons = _openshell_sufficient(openshell)
+    if not openshell_ok:
+        return _manual_review(
+            summary="OpenShell containment evidence is insufficient for allow.",
+            reasons=openshell_reasons,
+            results=results,
+            missing=["openshell"],
+            request_id=request_id,
+            run_id=run_id,
+            artifacts=artifacts,
+            worker_provider=worker_provider,
+            agent_invocations=agent_invocations,
+        )
+
+    worker_ok, worker_reasons = _worker_sufficient(worker_provider=worker_provider, agent_invocations=agent_invocations)
+    if not worker_ok:
+        return _manual_review(
+            summary="Worker provider evidence is insufficient for allow.",
+            reasons=worker_reasons,
+            results=results,
+            missing=["worker_provider"],
+            request_id=request_id,
+            run_id=run_id,
+            artifacts=artifacts,
+            worker_provider=worker_provider,
+            agent_invocations=agent_invocations,
         )
 
     residual_reasons = [
@@ -161,6 +308,7 @@ def decide_static_gates(
         summary=summary,
         primary_reasons=primary_reasons,
         gate_results=results,
+        agent_invocations=agent_invocations or [],
         next_actions=["Proceed only to the configured sandbox flow; never run malicious lifecycle scripts on host."],
         request_id=request_id,
         run_id=run_id,

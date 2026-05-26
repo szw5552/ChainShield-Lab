@@ -8,11 +8,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .artifacts import ArtifactWriteError, atomic_write_text, sanitize_text, write_json_artifact
+from .artifacts import ArtifactWriteError, atomic_write_text, render_markdown_summary, sanitize_text, write_json_artifact
 from .config import ConfigValidationError, DemoConfig, build_run_id
 from .sandbox import run_sandbox
 from .scanners import run_scanners
 from .supervisor import SupervisorDecision, decide_static_gates
+from .worker_provider import run_worker_provider
 
 
 def _safe_outputs_from_raw_config(path: Path) -> dict[str, str | None]:
@@ -62,23 +63,7 @@ def _evidence_hash(config: DemoConfig) -> str:
 
 
 def _markdown_summary(decision: dict[str, Any]) -> str:
-    lines = [
-        f"# ChainShield Decision: {decision['decision']}",
-        "",
-        f"- Request: `{decision['request_id']}`",
-        f"- Run: `{decision['run_id']}`",
-        f"- Summary: {decision['summary']}",
-        "",
-        "## Primary Reasons",
-    ]
-    lines.extend(f"- {reason}" for reason in decision["primary_reasons"])
-    lines.extend(["", "## Gate Evidence"])
-    for item in decision["gate_results"]:
-        lines.append(f"- {item['gate']}: {item['status']} ({item['risk_level']})")
-        lines.extend(f"  - {reason}" for reason in item.get("reasons", []))
-    lines.extend(["", "## Next Actions"])
-    lines.extend(f"- {action}" for action in decision["next_actions"])
-    return "\n".join(lines) + "\n"
+    return render_markdown_summary(decision)
 
 
 def _write_decision_artifacts(decision: dict[str, Any]) -> None:
@@ -162,14 +147,15 @@ def evaluate(args: argparse.Namespace) -> int:
     )
 
     sandbox_evidence = None
+    combined_results = list(scanner_results)
     if _sandbox_requested(config) and _can_enter_sandbox(static_decision, config):
         sandbox_evidence = run_sandbox(config, run_id=run_id)
         if sandbox_evidence and sandbox_evidence.get("source_path"):
             artifacts["logs"].append(str(sandbox_evidence["source_path"]))
+        combined_results = [*scanner_results, *([sandbox_evidence] if sandbox_evidence else [])]
         if sandbox_evidence and sandbox_evidence.get("status") != "pass" and static_decision.decision != "deny":
             decision = _manual_review_for_sandbox(static_decision, sandbox_evidence).to_dict()
         else:
-            combined_results = [*scanner_results, *([sandbox_evidence] if sandbox_evidence else [])]
             decision = decide_static_gates(
                 combined_results,
                 scanner_mode=config.scanner_mode,
@@ -181,6 +167,26 @@ def evaluate(args: argparse.Namespace) -> int:
             ).to_dict()
     else:
         decision = static_decision.to_dict()
+
+    if config.worker_provider.enabled and decision["decision"] != "deny":
+        agent_invocations, worker_paths = run_worker_provider(
+            config.worker_provider,
+            request_id=config.request_id,
+            run_id=run_id,
+            gate_results=combined_results,
+            artifacts=artifacts,
+        )
+        artifacts["worker"] = list(dict.fromkeys([*artifacts.get("worker", []), *worker_paths]))
+        decision = decide_static_gates(
+            combined_results,
+            scanner_mode=config.scanner_mode,
+            sandbox_demo_override=config.sandbox_demo_override_enabled,
+            request_id=config.request_id,
+            run_id=run_id,
+            artifacts=artifacts,
+            worker_provider=config.worker_provider,
+            agent_invocations=agent_invocations,
+        ).to_dict()
     _write_decision_artifacts(decision)
     print(json.dumps(decision, ensure_ascii=False))
     return {"allow": 0, "deny": 1, "manual_review": 2}[decision["decision"]]

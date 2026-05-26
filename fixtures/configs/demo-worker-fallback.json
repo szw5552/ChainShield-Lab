@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "request_id": "REQ-demo-worker-fallback",
+  "package_manager": "npm",
+  "scanner_mode": {
+    "snyk": "fixture",
+    "socket": "fixture"
+  },
+  "sandbox_mode": "fixture",
+  "fixtures": {
+    "poc_app": "fixtures/poc-app",
+    "malicious_package": "fixtures/malicious-poc-pkg",
+    "snyk_report": "fixtures/reports/snyk-pass.json",
+    "socket_report": "fixtures/reports/socket-pass.json",
+    "openshell_log": "fixtures/reports/openshell-deny.log",
+    "canary_secret": "fixtures/canary/canary-secret.txt",
+    "openshell_policy": "policies/openshell-npm-install.yaml"
+  },
+  "outputs": {
+    "decision_json": "reports/demo-worker-fallback-decision.json",
+    "markdown_summary": "reports/demo-worker-fallback-summary.md"
+  },
+  "safety": {
+    "synthetic_egress_target": "https://chainshield-egress-test.invalid/collect",
+    "sandbox_demo_override": {
+      "enabled": false,
+      "reason": null
+    }
+  },
+  "worker_provider": {
+    "enabled": true,
+    "primary": "nemotron_api",
+    "fallbacks": ["codex_subagent", "claude_subagent"],
+    "timeout_seconds": 60,
+    "output_path": "reports/worker/demo-worker-fallback-evidence.json"
+  }
+}

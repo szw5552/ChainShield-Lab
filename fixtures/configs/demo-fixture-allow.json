@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "request_id": "REQ-demo-fixture-allow",
+  "package_manager": "npm",
+  "scanner_mode": {
+    "snyk": "fixture",
+    "socket": "fixture"
+  },
+  "sandbox_mode": "disabled",
+  "fixtures": {
+    "poc_app": "fixtures/poc-app",
+    "malicious_package": "fixtures/malicious-poc-pkg",
+    "snyk_report": "fixtures/reports/snyk-pass.json",
+    "socket_report": "fixtures/reports/socket-pass.json",
+    "openshell_log": null,
+    "canary_secret": "fixtures/canary/synthetic-canary.txt"
+  },
+  "outputs": {
+    "decision_json": "reports/demo-fixture-allow-decision.json",
+    "markdown_summary": "reports/demo-fixture-allow-summary.md"
+  },
+  "safety": {
+    "synthetic_egress_target": "https://chainshield-egress-test.invalid/collect",
+    "sandbox_demo_override": {
+      "enabled": false,
+      "reason": null
+    }
+  }
+}

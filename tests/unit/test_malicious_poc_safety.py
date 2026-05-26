@@ -45,8 +45,14 @@ def test_invalid_config_and_static_deny_do_not_trigger_host_npm_lifecycle(monkey
     invalid_path.write_text(json.dumps(invalid), encoding="utf-8")
 
     assert cli.main(["evaluate", "--config", str(invalid_path), "--sandbox-only"]) == 2
+    decision_path = Path("reports/demo-fixture-deny-decision.json")
+    summary_path = Path("reports/demo-fixture-deny-summary.md")
+    decision_path.unlink(missing_ok=True)
+    summary_path.unlink(missing_ok=True)
     assert cli.main(["evaluate", "--config", "fixtures/configs/demo-fixture-deny.json", "--sandbox-only"]) == 1
     assert calls["sandbox"] == 0
+    decision_path.unlink(missing_ok=True)
+    summary_path.unlink(missing_ok=True)
 
 
 def test_poc_lockfile_and_manifest_remain_local_private_and_non_publishable():
