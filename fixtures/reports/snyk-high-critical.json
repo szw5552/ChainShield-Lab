@@ -1,0 +1,17 @@
+{
+  "ok": false,
+  "vulnerabilities": [
+    {
+      "id": "SNYK-DEMO-HIGH-0001",
+      "packageName": "malicious-poc-pkg",
+      "severity": "high",
+      "title": "PoC install script can access synthetic canary"
+    },
+    {
+      "id": "SNYK-DEMO-CRITICAL-0002",
+      "packageName": "malicious-poc-pkg",
+      "severity": "critical",
+      "title": "PoC synthetic exfiltration path"
+    }
+  ]
+}

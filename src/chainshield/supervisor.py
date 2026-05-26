@@ -145,10 +145,21 @@ def decide_static_gates(
             worker_provider=(worker_provider or WorkerProviderConfig()).to_decision_metadata(),
         )
 
+    residual_reasons = [
+        reason
+        for item in results
+        for reason in item.get("reasons", [])
+        if "residual risk" in str(reason).lower()
+    ]
+    primary_reasons = ["Snyk and Socket evidence passed.", *residual_reasons]
+    summary = "Static dependency gates passed."
+    if residual_reasons:
+        summary = "Static dependency gates passed with residual risk noted."
+
     return SupervisorDecision(
         decision="allow",
-        summary="Static dependency gates passed.",
-        primary_reasons=["Snyk and Socket evidence passed."],
+        summary=summary,
+        primary_reasons=primary_reasons,
         gate_results=results,
         next_actions=["Proceed only to the configured sandbox flow; never run malicious lifecycle scripts on host."],
         request_id=request_id,

@@ -61,14 +61,10 @@ class WorkerProviderConfig:
 
     @property
     def provider_chain(self) -> list[str]:
-        if not self.enabled:
-            return ["manual_review"]
         return DEFAULT_PROVIDER_CHAIN.copy()
 
     @property
     def fallback_order_after_primary_failure(self) -> list[str]:
-        if not self.enabled:
-            return ["manual_review"]
         return FALLBACK_ORDER_AFTER_PRIMARY_FAILURE.copy()
 
     def to_decision_metadata(self) -> dict[str, Any]:
