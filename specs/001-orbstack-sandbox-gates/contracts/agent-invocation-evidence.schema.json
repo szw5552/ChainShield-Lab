@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chainshield-lab.local/contracts/agent-invocation-evidence.schema.json",
+  "title": "ChainShield Agent Invocation Evidence",
+  "description": "Nemotron/Codex/Claude Worker provider 的 sanitized invocation evidence；不得包含 API key、token 或未清理 prompt/log。",
+  "type": "object",
+  "required": [
+    "provider",
+    "model",
+    "status",
+    "request_id",
+    "task_packet_path",
+    "input_artifacts",
+    "output_artifact_path",
+    "observations",
+    "missing_evidence",
+    "errors",
+    "observed_at",
+    "sanitized"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "provider": {
+      "type": "string",
+      "enum": [
+        "nemotron_api",
+        "codex_subagent",
+        "claude_subagent"
+      ]
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "manual_review",
+        "failed",
+        "skipped"
+      ]
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task_packet_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "input_artifacts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "output_artifact_path": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "observations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "missing_evidence": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "observed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sanitized": {
+      "type": "boolean",
+      "const": true
+    }
+  }
+}

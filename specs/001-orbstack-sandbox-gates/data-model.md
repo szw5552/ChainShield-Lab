@@ -26,7 +26,7 @@
 
 ## 實體：Demo Config
 
-**用途**: 版本控管的展示設定檔，指定 fixture、scanner mode、sandbox mode 與輸出路徑。
+**用途**: 版本控管的展示設定檔，指定 fixture、scanner mode、sandbox mode、sandbox demo override 與輸出路徑。
 
 **Fields**:
 
@@ -35,6 +35,11 @@
 - `scanner_mode.snyk`: enum `fixture | live | skip`。
 - `scanner_mode.socket`: enum `fixture | live | skip`。
 - `sandbox_mode`: enum `disabled | fixture | live`。
+- `worker_provider.enabled`: boolean；是否啟用 AI Worker provider evidence path。
+- `worker_provider.primary`: enum `nemotron_api | disabled`；啟用時預設為 `nemotron_api`。
+- `worker_provider.fallbacks`: enum 陣列；允許值為 `codex_subagent`、`claude_subagent`，依序嘗試。
+- `worker_provider.timeout_seconds`: 整數；單一 provider 嘗試逾時秒數。
+- `worker_provider.output_path`: 字串；sanitized worker invocation evidence output path。
 - `fixtures.poc_app`: 字串；npm app fixture path。
 - `fixtures.malicious_package`: 字串；PoC-only package path。
 - `fixtures.snyk_report`: 字串或 null；sanitized Snyk report path。
@@ -43,7 +48,8 @@
 - `fixtures.canary_secret`: 字串或 null；sandbox 內合成 canary secret fixture path。
 - `outputs.decision_json`: 字串；Supervisor JSON decision output path。
 - `outputs.markdown_summary`: 字串或 null；可選 Markdown summary path。
-- `safety.allow_static_gate_bypass`: boolean；只允許 P2 sandbox demo 明確繞過靜態 gate 時為 true。
+- `safety.sandbox_demo_override.enabled`: boolean；只允許第三層 sandbox containment 展示在靜態 gate `deny` 後繼續執行時為 true。
+- `safety.sandbox_demo_override.reason`: 字串或 null；啟用 sandbox demo override 時必填，說明展示目的與不得改判為 `allow` 的限制。
 - `safety.synthetic_egress_target`: 字串；只能是合成測試目的地，不得使用真實 C2。
 
 **Validation Rules**:
@@ -51,7 +57,9 @@
 - config validation 失敗時，Supervisor 必須產生 `manual_review` decision，並阻止 scanner 與 sandbox 執行。
 - `live` scanner mode 不得要求 token 寫入 config；token/auth 應由外部 CLI/session 管理且不得保存。
 - `sandbox_mode=live` 時必須有 canary secret fixture 與 OpenShell policy path，且不得引用真實宿主機秘密。
-- `allow_static_gate_bypass=true` 時 decision/summary 必須明確標示這是第三層防線展示，不代表 package 可安全安裝。
+- `sandbox_demo_override.enabled=true` 時必須提供 `reason`，且 decision/summary 必須明確標示這是第三層防線展示，不代表 package 可安全安裝，也不得將 Snyk/Socket 的 `deny` 改判為 `allow`。
+- `worker_provider.enabled=true` 時不得在 config 中保存 `NVIDIA_API_KEY`、OpenAI/Anthropic key 或任何 provider token；Nemotron API key 只能由環境變數提供。
+- Worker provider 的 `output_path` 必須通過 repository-local path safety 檢查，且不得經由 symlink 指向 repository 外部或敏感位置。
 
 ## 實體：Gate 證據 (Gate Evidence)
 
@@ -73,9 +81,55 @@
 **Validation Rules**:
 
 - Snyk high/critical vulnerability evidence 必須正規化為 `status=deny`。
-- Socket unhealthy、policy violation 或 live exit code 非 0 必須正規化為 `status=deny`，除非 report 無法解析則為 `manual_review`。
+- Socket `unhealthy`、organization policy violation、malware/supply-chain risk，或可判定的 policy failure exit code 必須正規化為 `status=deny`；report 無法解析、缺少必要欄位或 exit code 無法歸類時必須正規化為 `status=manual_review`。
 - OpenShell containment 只有同時具備 file read block 與 network egress block evidence 時才可視為 pass。
 - 缺少必要欄位、格式錯誤或互相衝突時，若沒有其他 gate 明確 deny，Supervisor 應輸出 `manual_review`。
+
+## 實體：Worker Provider
+
+**用途**: 表示可選 AI Worker provider chain，用於展示 README/todo 中的 Supervisor/Worker agent flow。
+
+**Fields**:
+
+- `enabled`: boolean。
+- `primary`: enum `nemotron_api | disabled`。
+- `fallbacks`: enum 陣列；允許 `codex_subagent`、`claude_subagent`。
+- `timeout_seconds`: 整數；建議 30-120 秒。
+- `base_url_env`: 字串；預設 `NEMOTRON_BASE_URL`，值不得寫入 artifact。
+- `model_env`: 字串；預設 `NEMOTRON_MODEL`，未設定時使用 `nvidia/nemotron-3-nano-30b-a3b`。
+- `api_key_env`: 字串；固定為 `NVIDIA_API_KEY`。
+- `output_path`: 字串；worker invocation evidence artifact path。
+
+**Validation Rules**:
+
+- `nemotron_api` 只能使用 NVIDIA hosted API 或明確 configured compatible endpoint；API key 不得出現在 config、task packet、prompt log 或 decision output。
+- Codex/Claude fallback 使用本地 subagent 與 `.agents/skills/chainshield-worker/SKILL.md`，不要求 OpenAI/Anthropic API key。
+- 所有 provider 都不可用時，若 demo config 要求 live worker evidence，Supervisor 必須輸出 `manual_review`。
+
+## 實體：Agent Invocation Evidence
+
+**用途**: 記錄 Nemotron/Codex/Claude Worker provider 嘗試的 sanitized evidence。
+
+**Fields**:
+
+- `provider`: enum `nemotron_api | codex_subagent | claude_subagent`。
+- `model`: 字串；例如 `nvidia/nemotron-3-nano-30b-a3b`、`local-codex` 或 `local-claude`。
+- `status`: enum `pass | manual_review | failed | skipped`。
+- `request_id`: 字串。
+- `task_packet_path`: 字串；sanitized worker task packet path。
+- `input_artifacts`: 字串陣列；只保存 artifact refs，不保存原始秘密內容。
+- `output_artifact_path`: 字串或 null。
+- `observations`: 字串陣列；worker 對 evidence sufficiency 的摘要。
+- `missing_evidence`: 字串陣列。
+- `errors`: 字串陣列；timeout、auth failure、rate limit、parse error 或 unavailable reason。
+- `observed_at`: ISO-8601 timestamp。
+- `sanitized`: boolean；必須為 true 才可保存。
+
+**Validation Rules**:
+
+- Agent invocation evidence 不得包含 API key、token、未清理 prompt、原始 OpenShell 敏感 log 或真實 host path。
+- Worker provider 只產生 evidence summary；不得直接裁決 `allow`、`deny` 或執行 scanner/sandbox shell command。
+- `status=pass` 只代表 worker evidence summary 已成功產生，不代表 package 可安全安裝。
 
 ## 實體：Sandbox 展示環境 (Sandbox Demo Environment)
 
@@ -112,6 +166,7 @@
 - `summary`: 字串；短摘要。
 - `primary_reasons`: 字串陣列。
 - `gate_results`: Gate Evidence 陣列或 gate summary 陣列。
+- `agent_invocations`: Agent Invocation Evidence 陣列；未啟用 Worker provider 時可為空陣列。
 - `missing_gates`: enum 陣列；缺失或未執行的必要 gate。
 - `next_actions`: 字串陣列。
 - `generated_at`: ISO-8601 timestamp。
@@ -126,6 +181,9 @@ config_validating -> collecting_evidence
 collecting_evidence -> deny          # 任一 gate 有明確 deny
 collecting_evidence -> manual_review # 無明確 deny 且證據缺失/衝突/不可解析
 collecting_evidence -> allow         # Snyk + Socket pass；若執行 sandbox demo，OpenShell containment 也 pass
+collecting_evidence -> worker_summarizing # worker_provider.enabled=true 且 gate evidence 已足以建立 task packet
+worker_summarizing -> manual_review      # 所有 Worker provider 不可用且要求 live worker evidence
+worker_summarizing -> allow|deny|manual_review # Supervisor 依 deterministic gate rules 裁決
 ```
 
 **Validation Rules**:
@@ -134,6 +192,8 @@ collecting_evidence -> allow         # Snyk + Socket pass；若執行 sandbox de
 - 若 sandbox install demo 已執行，`allow` 還需要 OpenShell read block 與 egress block evidence 皆 pass。
 - 明確 `deny` 優先於 missing gate；摘要仍需列出缺失 gate。
 - `manual_review` 必須阻止 install-time demo，直到 evidence 補齊或人工覆核。
+- `sandbox_demo_override.enabled=true` 只能允許受控 sandbox 展示繼續執行，不得覆寫最終 `deny` 決策。
+- Worker provider evidence 不得覆寫 Snyk/Socket/OpenShell gate rules；缺失或失敗時若沒有明確 gate deny，必須輸出 `manual_review`。
 
 ## 實體：展示輸出 (Demo Output)
 
@@ -151,3 +211,4 @@ collecting_evidence -> allow         # Snyk + Socket pass；若執行 sandbox de
 
 - 不得包含真實秘密、憑證、SSH key、cloud profile、personal env file 或未遮罩 machine-specific sensitive path。
 - 必須保存足夠 evidence reference，讓審查者不重跑完整 demo 也能理解決策。
+- Markdown summary 與 README 指引必須標示本功能為 demo-only npm supply-chain defense PoC，不代表 production CI/CD、SOC/SIEM 或 general malware-analysis 結論。

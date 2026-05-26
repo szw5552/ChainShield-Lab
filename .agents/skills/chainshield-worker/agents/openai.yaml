@@ -1,0 +1,3 @@
+display_name: ChainShield Worker
+short_description: Summarize ChainShield evidence safely
+default_prompt: Use ChainShield Worker to inspect a sanitized worker task packet and return worker evidence for Supervisor review.
