@@ -14,10 +14,10 @@
 
 **Purpose**: 建立最小 Python CLI 專案骨架、測試目錄與安全輸出邊界。
 
-- [ ] T001 建立 Python package 與測試目錄骨架，新增 `src/chainshield/__init__.py`、`tests/contract/.gitkeep`、`tests/integration/.gitkeep`、`tests/unit/.gitkeep`
-- [ ] T002 在 `pyproject.toml` 定義 Python 3.11+ 專案 metadata、`pytest` 與 `jsonschema` 測試相依套件
-- [ ] T003 [P] 在 `.gitignore` 排除 repository root runtime output `/reports/`、live scanner output、tarball、暫存 sandbox log 與本機 auth/token 檔案；不得排除 `fixtures/reports/`，因為 sanitized fixture reports 必須可版本控管
-- [ ] T004 [P] 建立 fixture 與 policy 目錄保留檔，新增 `fixtures/reports/.gitkeep`、`fixtures/configs/.gitkeep`、`fixtures/canary/.gitkeep`、`policies/.gitkeep`
+- [X] T001 建立 Python package 與測試目錄骨架，新增 `src/chainshield/__init__.py`、`tests/contract/.gitkeep`、`tests/integration/.gitkeep`、`tests/unit/.gitkeep`
+- [X] T002 在 `pyproject.toml` 定義 Python 3.11+ 專案 metadata、`pytest` 與 `jsonschema` 測試相依套件
+- [X] T003 [P] 在 `.gitignore` 排除 repository root runtime output `/reports/`、live scanner output、tarball、暫存 sandbox log 與本機 auth/token 檔案；不得排除 `fixtures/reports/`，因為 sanitized fixture reports 必須可版本控管
+- [X] T004 [P] 建立 fixture 與 policy 目錄保留檔，新增 `fixtures/reports/.gitkeep`、`fixtures/configs/.gitkeep`、`fixtures/canary/.gitkeep`、`policies/.gitkeep`
 
 ---
 
