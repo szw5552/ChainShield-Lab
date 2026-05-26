@@ -12,6 +12,12 @@ DENY_SEVERITIES = {"high", "critical"}
 LOW_MEDIUM_SEVERITIES = {"low", "medium"}
 
 
+class ReportSanitizationError(ValueError):
+    def __init__(self, reasons: list[str]):
+        self.reasons = reasons
+        super().__init__("sanitizer rejected report: " + ", ".join(reasons))
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
@@ -51,13 +57,17 @@ def gate_evidence(
 
 
 def _safe_parse_error(gate: str, path: str | Path, exc: Exception, *, run_id: str) -> dict[str, Any]:
+    if isinstance(exc, ReportSanitizationError):
+        reasons = ["sanitizer rejected report: " + reason for reason in exc.reasons]
+    else:
+        reasons = [f"parse_or_schema_error: could not parse sanitized {gate} report ({type(exc).__name__})"]
     return gate_evidence(
         gate=gate,
         status="manual_review",
         run_id=run_id,
         source_path=str(path),
         risk_level="unknown",
-        reasons=[f"parse_or_schema_error: could not parse sanitized {gate} report ({type(exc).__name__})"],
+        reasons=reasons,
     )
 
 
@@ -65,7 +75,7 @@ def _load_json_report(path: str | Path) -> Any:
     raw = Path(path).read_text(encoding="utf-8")
     result = sanitize_text(raw)
     if not result.safe:
-        raise ValueError("sanitizer rejected report: " + ", ".join(result.reasons))
+        raise ReportSanitizationError(result.reasons)
     return json.loads(raw)
 
 

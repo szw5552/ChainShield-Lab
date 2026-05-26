@@ -280,3 +280,53 @@ Phase 4 手動 sandbox 驗證路徑（當本機缺少 OpenShell/NemoClaw 或 liv
 - `sandbox_mode=live` 時，OrbStack/OpenShell readiness 失敗必須輸出 `manual_review`，並列出 readiness status、start/end timestamp 或 timeout reason、containment evidence status 與「禁止 host fallback」。
 - live sandbox install demo runtime 目標為 5 分鐘內完成；超時需保存 sanitized timeout/failure evidence，不得改用 host `npm install` 或未授權的一般 Docker runtime。
 - manual observation 只能作為說明性註記或 `manual_review` 依據；不得單獨滿足 `allow`。
+
+## Phase 6 fixture-first 驗證紀錄（2026-05-27）
+
+本輪收尾驗證使用 `.venv/bin/python -m chainshield.cli evaluate --config <config>`，不需要 Snyk/Socket token，不啟動 host `npm install`，也不執行 live OpenShell sandbox。CLI/tool 可用性與旗標限制引用 `specs/001-orbstack-sandbox-gates/research.md` 的「Phase 2 本機工具與 hosted API 驗證紀錄（2026-05-27）」：本機未安裝 `snyk`、`socket`、`openshell`、`nemoclaw`，因此 live mode 必須走 unavailable/`manual_review` evidence 或 sanitized fixture fallback。
+
+| Config | Exit code | Decision | Runtime | 主要 evidence |
+|--------|-----------|----------|---------|---------------|
+| `fixtures/configs/demo-fixture-deny.json` | `1` | `deny` | 約 `0.0705s` | Snyk high/critical 與 Socket unhealthy，未進入 sandbox install。 |
+| `fixtures/configs/demo-fixture-allow.json` | `0` | `allow` | 約 `0.0679s` | Snyk pass 與 Socket pass；無 missing gate。 |
+| `fixtures/configs/demo-fixture-manual-review.json` | `2` | `manual_review` | 約 `0.0667s` | `socket` 設為 `skip`，`missing_gates=["socket"]`。 |
+| `fixtures/configs/demo-fixture-sandbox.json` | `1` | `deny` | 約 `0.0677s` | static deny 保持 `deny`；fixture OpenShell log 只作 containment demo evidence，override 不得改判 `allow`。 |
+
+產生的 runtime artifacts 位於 `reports/`（已由 `.gitignore` 排除），包含對應 `*-decision.json` 與 `*-summary.md`。重新驗證前請刪除舊的輸出檔，因為 artifact writer 會拒絕覆寫既有 decision/summary。
+
+### Markdown 30 秒可讀性 manual check
+
+人工檢查 `reports/demo-fixture-allow-summary.md`、`reports/demo-fixture-deny-summary.md`、`reports/demo-fixture-manual-review-summary.md` 與 `reports/demo-fixture-sandbox-summary.md` 的前 6 行，30 秒內皆可辨識：
+
+- `Result`：`allow`、`deny` 或 `manual_review`。
+- `Primary reasons`：主要 deny/manual_review/allow 理由。
+- `Missing gates`：缺失 gate 或 `none`。
+- `Next actions`：下一步；`manual_review` 不提供人工直接改判 `allow` 的路徑。
+- 文件底部仍包含 demo-only npm supply-chain defense PoC scope disclaimer。
+
+### Runtime 與安全注意事項
+
+- Fixture scanner、Supervisor report processing 與 fixture-first 總流程皆低於 Phase 6 performance gate：fixture scanner < 30 秒、Supervisor processing < 30 秒、fixture-first CLI 總流程 < 10 秒。
+- `reports/`、`scanner-output/`、`sandbox-logs/`、tarball、token/auth 檔與未清理 log 不得提交；只有 `fixtures/reports/` 中明確標示 sanitized 的 fixture reports 可版本控管。
+- Artifact redaction integration test 已覆蓋 token/API key、SSH private key、cloud profile 與個人 `.env` pattern；若 sanitizer 命中，CLI 只保存 sanitized `manual_review` reason，不保存原始秘密內容。
+
+## Phase 6 Nemotron Worker fallback 驗證紀錄（2026-05-27）
+
+本輪未設定 `NVIDIA_API_KEY`，因此未執行 authenticated Nemotron `POST /v1/chat/completions`。依 `research.md` 的 NVIDIA Nemotron hosted API 驗證結論，live Worker 仍使用 canonical chain：`nemotron_api` -> `codex_subagent` -> `claude_subagent` -> `manual_review`；primary 失敗後 fallback order 固定為 `codex_subagent` -> `claude_subagent` -> `manual_review`。
+
+執行：
+
+```bash
+.venv/bin/python -m chainshield.cli evaluate --config fixtures/configs/demo-worker-fallback.json
+```
+
+觀察結果：
+
+- Exit code `2`，Supervisor decision 為 `manual_review`，`missing_gates=["worker_provider"]`。
+- Runtime 約 `0.0760s`；未設定 API key 時不進行外部 authenticated request。
+- `agent_invocations` 依序包含：
+  1. `nemotron_api`：`failed`，`missing_evidence=["nvidia_api_key"]`，error 為 sanitized `NVIDIA_API_KEY unavailable`。
+  2. `codex_subagent`：`failed`，提示需使用 `.agents/skills/chainshield-worker/SKILL.md` 進行本地 manual handoff。
+  3. `claude_subagent`：`failed`，提示需使用 `.agents/skills/chainshield-worker/SKILL.md` 進行本地 manual handoff。
+- CLI 產生 sanitized `reports/worker-task-packet.json`，只包含 artifact refs、evidence checklist、request metadata 與「不得執行 scanner/sandbox/shell/npm lifecycle」安全界線。
+- Provider unavailable evidence 只可支援 `manual_review`；不得覆寫 Snyk/Socket/OpenShell deterministic gate，也不得直接形成 `allow` 或 `deny`。

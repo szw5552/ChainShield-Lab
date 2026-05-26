@@ -160,11 +160,11 @@
 
 **Purpose**: 完成安全清理、效能驗證、文件一致性與完整 quickstart 驗證。
 
-- [ ] T050 [P] 新增 artifact redaction integration test，驗證 T072 sanitizer 對 fixture/report/output 的保存前檢查，確保不含 token、SSH key、cloud profile 或個人 `.env` 內容於 `tests/integration/test_artifact_redaction.py`
-- [ ] T051 新增 fixture scanner、report processing 與 decision performance test，要求 fixture scanner 在 30 秒內完成或明確失敗、Supervisor report processing 在 30 秒內完成或明確失敗，且 fixture-first Supervisor 決策總流程在 10 秒內完成，測試需保存 start/end timestamps 與 timeout/failure reason 於 `tests/integration/test_decision_performance.py`
-- [ ] T052 執行完整 `pytest tests/`；若失敗，必須依根因修正 production/PoC code、測試、sanitized fixture 或文件，不得以放寬測試或改寫 fixture 掩蓋實作缺陷，直到完整測試通過或以 quickstart 記錄明確的 manual-only 驗證限制於 `tests/`
-- [ ] T053 執行 quickstart fixture-first 驗證並更新預期輸出、runtime、安全注意事項與 Markdown 30 秒可讀性 manual check 結果；CLI/tool verification 結論必須引用 `specs/001-orbstack-sandbox-gates/research.md` 的版本控管驗證紀錄，於 `specs/001-orbstack-sandbox-gates/quickstart.md`
-- [ ] T070 執行 Nemotron Worker live smoke test 或 fallback manual verification，更新 NVIDIA API setup、canonical `provider_chain` `nemotron_api` -> `codex_subagent` -> `claude_subagent` -> `manual_review`、`fallback_order_after_primary_failure` `codex_subagent` -> `claude_subagent` -> `manual_review`、agent skill 使用方式與 provider unavailable 的 `manual_review` evidence 於 `specs/001-orbstack-sandbox-gates/quickstart.md`
+- [X] T050 [P] 新增 artifact redaction integration test，驗證 T072 sanitizer 對 fixture/report/output 的保存前檢查，確保不含 token、SSH key、cloud profile 或個人 `.env` 內容於 `tests/integration/test_artifact_redaction.py`
+- [X] T051 新增 fixture scanner、report processing 與 decision performance test，要求 fixture scanner 在 30 秒內完成或明確失敗、Supervisor report processing 在 30 秒內完成或明確失敗，且 fixture-first Supervisor 決策總流程在 10 秒內完成，測試需保存 start/end timestamps 與 timeout/failure reason 於 `tests/integration/test_decision_performance.py`
+- [X] T052 執行完整 `pytest tests/`；若失敗，必須依根因修正 production/PoC code、測試、sanitized fixture 或文件，不得以放寬測試或改寫 fixture 掩蓋實作缺陷，直到完整測試通過或以 quickstart 記錄明確的 manual-only 驗證限制於 `tests/`
+- [X] T053 執行 quickstart fixture-first 驗證並更新預期輸出、runtime、安全注意事項與 Markdown 30 秒可讀性 manual check 結果；CLI/tool verification 結論必須引用 `specs/001-orbstack-sandbox-gates/research.md` 的版本控管驗證紀錄，於 `specs/001-orbstack-sandbox-gates/quickstart.md`
+- [X] T070 執行 Nemotron Worker live smoke test 或 fallback manual verification，更新 NVIDIA API setup、canonical `provider_chain` `nemotron_api` -> `codex_subagent` -> `claude_subagent` -> `manual_review`、`fallback_order_after_primary_failure` `codex_subagent` -> `claude_subagent` -> `manual_review`、agent skill 使用方式與 provider unavailable 的 `manual_review` evidence 於 `specs/001-orbstack-sandbox-gates/quickstart.md`
 
 ---
 
