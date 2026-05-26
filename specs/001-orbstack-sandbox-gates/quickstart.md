@@ -271,3 +271,12 @@ export NVIDIA_API_KEY="<do-not-commit>"
 - 本機 `orb version` 顯示 OrbStack `2.1.3 (2010300)`，`docker --version` 顯示 Docker `29.4.0`；但 OpenShell/NemoClaw 缺失時 live sandbox readiness 仍必須失敗，且不得 host fallback。
 - Socket exit-code classification 以 `policy_failure -> deny`、`auth_or_network_unavailable -> manual_review`、`parse_or_schema_error -> manual_review`、`timeout -> manual_review`、`unknown_exit_code -> manual_review` 為 Phase 2 adapter 基準。
 - OpenShell policy schema 以 `version`、`filesystem_policy`、`landlock`、`process`、`network_policies` 為已查證 top-level 結構；未驗證本機 CLI flags 前不得硬編 sandbox command。
+
+## manual-sandbox-verification
+
+Phase 4 手動 sandbox 驗證路徑（當本機缺少 OpenShell/NemoClaw 或 live tool 無法自動化時）：
+
+- 使用 `fixtures/configs/demo-fixture-sandbox.json` 與 `fixtures/reports/openshell-deny.log` 作為 sanitized fixture 替代 evidence。
+- `sandbox_mode=live` 時，OrbStack/OpenShell readiness 失敗必須輸出 `manual_review`，並列出 readiness status、start/end timestamp 或 timeout reason、containment evidence status 與「禁止 host fallback」。
+- live sandbox install demo runtime 目標為 5 分鐘內完成；超時需保存 sanitized timeout/failure evidence，不得改用 host `npm install` 或未授權的一般 Docker runtime。
+- manual observation 只能作為說明性註記或 `manual_review` 依據；不得單獨滿足 `allow`。

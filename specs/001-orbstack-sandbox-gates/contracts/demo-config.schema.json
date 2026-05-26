@@ -105,6 +105,12 @@
             "string",
             "null"
           ]
+        },
+        "openshell_policy": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },

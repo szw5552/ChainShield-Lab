@@ -10,12 +10,9 @@ from typing import Any
 
 from .artifacts import ArtifactWriteError, atomic_write_text, sanitize_text, write_json_artifact
 from .config import ConfigValidationError, DemoConfig, build_run_id
+from .sandbox import run_sandbox
 from .scanners import run_scanners
 from .supervisor import SupervisorDecision, decide_static_gates
-
-
-def run_sandbox(*args, **kwargs):
-    return None
 
 
 def _safe_outputs_from_raw_config(path: Path) -> dict[str, str | None]:
@@ -97,6 +94,38 @@ def _write_decision_artifacts(decision: dict[str, Any]) -> None:
         atomic_write_text(Path(markdown_summary), markdown)
 
 
+def _sandbox_requested(config: DemoConfig) -> bool:
+    return config.sandbox_mode in {"fixture", "live"}
+
+
+def _can_enter_sandbox(static_decision: SupervisorDecision, config: DemoConfig) -> bool:
+    if static_decision.decision == "allow":
+        return True
+    if static_decision.decision == "deny" and config.sandbox_demo_override_enabled:
+        return True
+    return False
+
+
+def _manual_review_for_sandbox(static_decision: SupervisorDecision, sandbox_evidence: dict[str, Any]) -> SupervisorDecision:
+    missing = list(dict.fromkeys([*static_decision.missing_gates, "openshell"]))
+    reasons = sandbox_evidence.get("reasons") or ["OpenShell containment evidence is incomplete."]
+    return SupervisorDecision(
+        decision="manual_review",
+        summary="Sandbox containment gate requires manual review.",
+        primary_reasons=list(reasons),
+        gate_results=[*static_decision.gate_results, sandbox_evidence],
+        missing_gates=missing,
+        next_actions=[
+            "Provide complete sanitized OpenShell file-read and egress-block evidence before allowing install.",
+            "Do not run npm lifecycle scripts on the host.",
+        ],
+        request_id=static_decision.request_id,
+        run_id=static_decision.run_id,
+        artifacts=static_decision.artifacts,
+        worker_provider=static_decision.worker_provider,  # type: ignore[arg-type]
+    )
+
+
 def evaluate(args: argparse.Namespace) -> int:
     config_path = Path(args.config)
     try:
@@ -122,7 +151,7 @@ def evaluate(args: argparse.Namespace) -> int:
         "logs": [],
         "worker": [],
     }
-    decision = decide_static_gates(
+    static_decision = decide_static_gates(
         scanner_results,
         scanner_mode=config.scanner_mode,
         sandbox_demo_override=config.sandbox_demo_override_enabled,
@@ -130,11 +159,29 @@ def evaluate(args: argparse.Namespace) -> int:
         run_id=run_id,
         artifacts=artifacts,
         worker_provider=config.worker_provider,
-    ).to_dict()
-    _write_decision_artifacts(decision)
+    )
 
-    if args.sandbox_only and decision["decision"] != "deny":
-        run_sandbox(config)
+    sandbox_evidence = None
+    if _sandbox_requested(config) and _can_enter_sandbox(static_decision, config):
+        sandbox_evidence = run_sandbox(config, run_id=run_id)
+        if sandbox_evidence and sandbox_evidence.get("source_path"):
+            artifacts["logs"].append(str(sandbox_evidence["source_path"]))
+        if sandbox_evidence and sandbox_evidence.get("status") != "pass" and static_decision.decision != "deny":
+            decision = _manual_review_for_sandbox(static_decision, sandbox_evidence).to_dict()
+        else:
+            combined_results = [*scanner_results, *([sandbox_evidence] if sandbox_evidence else [])]
+            decision = decide_static_gates(
+                combined_results,
+                scanner_mode=config.scanner_mode,
+                sandbox_demo_override=config.sandbox_demo_override_enabled,
+                request_id=config.request_id,
+                run_id=run_id,
+                artifacts=artifacts,
+                worker_provider=config.worker_provider,
+            ).to_dict()
+    else:
+        decision = static_decision.to_dict()
+    _write_decision_artifacts(decision)
     print(json.dumps(decision, ensure_ascii=False))
     return {"allow": 0, "deny": 1, "manual_review": 2}[decision["decision"]]
 

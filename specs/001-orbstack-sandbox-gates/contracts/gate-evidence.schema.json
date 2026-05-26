@@ -92,6 +92,70 @@
       "type": "string",
       "minLength": 1,
       "description": "Repository-local run_id derived from demo config path, fixture identity, timestamp, and evidence hash."
+    },
+    "containment_events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "event_type",
+          "policy_rule_id",
+          "result",
+          "timestamp",
+          "artifact_path",
+          "source_kind",
+          "sanitized"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "event_type": {
+            "type": "string",
+            "enum": [
+              "filesystem_read",
+              "network_egress"
+            ]
+          },
+          "blocked_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "blocked_target": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "policy_rule_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "result": {
+            "type": "string",
+            "const": "blocked"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "artifact_path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source_kind": {
+            "type": "string",
+            "enum": [
+              "live",
+              "fixture"
+            ]
+          },
+          "sanitized": {
+            "type": "boolean",
+            "const": true
+          }
+        }
+      }
     }
   }
 }

@@ -289,3 +289,132 @@ def socket_evidence_from_classification(
         risk_level="unknown",
         reasons=[f"{classification}: Socket live scanner did not provide usable pass/deny evidence"],
     )
+
+
+REQUIRED_OPENSHELL_EVENTS = {
+    "filesystem_read": "file read block",
+    "network_egress": "egress block",
+}
+
+
+def _parse_openshell_event(line: str, *, source_path: str | None, source_kind: str) -> dict[str, Any] | None:
+    if not line.strip():
+        return None
+    data = json.loads(line)
+    if not isinstance(data, dict):
+        raise ValueError("OpenShell event must be a JSON object")
+    event_type = str(data.get("event_type") or data.get("type") or "")
+    result = str(data.get("result") or "").lower()
+    blocked_path = data.get("blocked_path")
+    blocked_target = data.get("blocked_target")
+    event = {
+        "event_type": event_type,
+        "blocked_path": blocked_path,
+        "blocked_target": blocked_target,
+        "policy_rule_id": str(data.get("policy_rule_id") or data.get("rule") or ""),
+        "result": result,
+        "timestamp": str(data.get("timestamp") or utc_now()),
+        "artifact_path": str(data.get("artifact_path") or source_path or ""),
+        "source_kind": str(data.get("source_kind") or source_kind),
+        "sanitized": bool(data.get("sanitized", False)),
+    }
+    if not event["policy_rule_id"]:
+        raise ValueError("OpenShell event missing policy_rule_id")
+    if event["source_kind"] not in {"live", "fixture"}:
+        raise ValueError("OpenShell event source_kind must be live or fixture")
+    if result != "blocked":
+        raise ValueError("OpenShell event result must be blocked")
+    if event_type == "filesystem_read" and not blocked_path:
+        raise ValueError("OpenShell filesystem event missing blocked_path")
+    if event_type == "network_egress" and not blocked_target:
+        raise ValueError("OpenShell network event missing blocked_target")
+    if event["sanitized"] is not True:
+        raise ValueError("OpenShell event must be sanitized")
+    return event
+
+
+def normalize_openshell_log_data(
+    raw_log: str,
+    *,
+    source_path: str | None,
+    run_id: str,
+    source_kind: str = "fixture",
+    command: str | None = None,
+    exit_code: int | None = 0,
+    observed_at: str | None = None,
+) -> dict[str, Any]:
+    result = sanitize_text(raw_log)
+    if not result.safe:
+        return gate_evidence(
+            gate="openshell",
+            status="manual_review",
+            run_id=run_id,
+            source_kind=source_kind,
+            source_path=source_path,
+            command=command,
+            exit_code=exit_code,
+            risk_level="unknown",
+            reasons=["sanitizer rejected OpenShell log: " + ", ".join(result.reasons)],
+            observed_at=observed_at,
+        )
+
+    events: list[dict[str, Any]] = []
+    parse_errors: list[str] = []
+    for line in raw_log.splitlines():
+        try:
+            event = _parse_openshell_event(line, source_path=source_path, source_kind=source_kind)
+        except (json.JSONDecodeError, ValueError) as exc:
+            parse_errors.append(f"parse_or_schema_error: {type(exc).__name__}")
+            continue
+        if event is not None and event["event_type"] in REQUIRED_OPENSHELL_EVENTS:
+            events.append(event)
+
+    present = {event["event_type"] for event in events}
+    missing = [label for event_type, label in REQUIRED_OPENSHELL_EVENTS.items() if event_type not in present]
+    if parse_errors or missing:
+        reasons = parse_errors + [f"missing containment evidence: {item}" for item in missing]
+        evidence = gate_evidence(
+            gate="openshell",
+            status="manual_review",
+            run_id=run_id,
+            source_kind=source_kind,
+            source_path=source_path,
+            command=command,
+            exit_code=exit_code,
+            risk_level="unknown",
+            reasons=reasons,
+            observed_at=observed_at,
+        )
+        evidence["containment_events"] = events
+        return evidence
+
+    evidence = gate_evidence(
+        gate="openshell",
+        status="pass",
+        run_id=run_id,
+        source_kind=source_kind,
+        source_path=source_path,
+        command=command,
+        exit_code=exit_code,
+        risk_level="none",
+        reasons=["OpenShell file read block evidence present.", "OpenShell egress block evidence present."],
+        observed_at=observed_at,
+    )
+    evidence["containment_events"] = events
+    return evidence
+
+
+def normalize_openshell_log(path: str | Path, *, run_id: str, source_kind: str = "fixture") -> dict[str, Any]:
+    try:
+        raw = Path(path).read_text(encoding="utf-8")
+    except OSError as exc:
+        return gate_evidence(
+            gate="openshell",
+            status="manual_review",
+            run_id=run_id,
+            source_kind=source_kind,
+            source_path=str(path),
+            risk_level="unknown",
+            reasons=[f"missing OpenShell evidence log: {type(exc).__name__}"],
+        )
+    return normalize_openshell_log_data(raw, source_path=str(path), run_id=run_id, source_kind=source_kind)

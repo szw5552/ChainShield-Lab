@@ -92,6 +92,10 @@ class DemoConfig:
         return dict(self.raw["scanner_mode"])
 
     @property
+    def sandbox_mode(self) -> str:
+        return str(self.raw["sandbox_mode"])
+
+    @property
     def sandbox_demo_override_enabled(self) -> bool:
         return bool(self.raw["safety"]["sandbox_demo_override"]["enabled"])
 

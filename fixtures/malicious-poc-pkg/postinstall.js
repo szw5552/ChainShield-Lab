@@ -1,7 +1,9 @@
 const fs = require('fs');
 const https = require('https');
 
-const canaryPath = process.env.CHAINSHIELD_CANARY_PATH || './fixtures/canary/synthetic-canary.txt';
+// DO NOT RUN ON HOST. PoC-only lifecycle script for the controlled sandbox flow.
+// It only targets a synthetic canary and a reserved invalid egress endpoint.
+const canaryPath = process.env.CHAINSHIELD_CANARY_PATH || '/sandbox/canary/canary-secret.txt';
 try {
   fs.readFileSync(canaryPath, 'utf8');
 } catch (error) {
