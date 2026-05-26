@@ -16,7 +16,7 @@
 
 **Language/Version**: Python 3.11+ 作為 Supervisor、CLI 與自動化腳本主體；Node.js 20+ / npm 10+ 用於 npm fixture 與 `postinstall` PoC；YAML/JSON 用於 OpenShell policy、demo config 與 evidence artifacts。
 
-**Primary Dependencies**: Python 標準函式庫優先；測試使用 `pytest`；JSON Schema 驗證可使用 `jsonschema` 或等價輕量驗證器；Nemotron live Worker 使用 NVIDIA OpenAI-compatible hosted API，預設 `NEMOTRON_BASE_URL=https://integrate.api.nvidia.com/v1`、`NEMOTRON_MODEL=nvidia/nemotron-3-nano-30b-a3b`，由環境變數 `NVIDIA_API_KEY` 提供憑證且不得寫入 config/report；外部 CLI 為 `snyk`、`socket`、`docker`/OrbStack、`openshell`/NemoClaw，且 Snyk/Socket/Nemotron login、API key 與網路能力皆視為 optional runtime dependencies。
+**Primary Dependencies**: Python 標準函式庫優先；測試使用 `pytest`；JSON Schema 驗證可使用 `jsonschema` 或等價輕量驗證器；Nemotron live Worker 使用 NVIDIA OpenAI-compatible hosted API；暫定預設為 `NEMOTRON_BASE_URL=https://integrate.api.nvidia.com/v1`、`NEMOTRON_MODEL=nvidia/nemotron-3-nano-30b-a3b`，但這些值必須由 T063 在實作前以官方文件與本機 smoke/manual check 驗證，並以版本控管的 `research.md` 紀錄作為最終依據；憑證由環境變數 `NVIDIA_API_KEY` 提供且不得寫入 config/report；外部 CLI 為 `snyk`、`socket`、`docker`/OrbStack、`openshell`/NemoClaw，且 Snyk/Socket/Nemotron login、API key 與網路能力皆視為 optional runtime dependencies。
 
 **Storage**: 檔案系統 artifact；版本控管保存 sanitized fixtures、demo config、JSON Schema 與 policy 範本，執行時輸出寫入 `reports/` 或 config 指定目錄並避免提交未清理 log、tarball、token 或機器專屬路徑。
 
@@ -68,8 +68,10 @@ src/
     ├── __init__.py
     ├── cli.py                 # Python CLI entrypoint，讀取 demo config 並輸出決策 artifact
     ├── config.py              # demo config schema 驗證與安全前置檢查
+    ├── schemas.py             # JSON Schema 載入與 contract validation helper
     ├── evidence.py            # Snyk/Socket/OpenShell evidence normalization
     ├── supervisor.py          # allow/deny/manual_review 決策矩陣
+    ├── artifacts.py           # sanitized artifact writer、decision output 與 Markdown summary renderer
     ├── scanners.py            # Snyk/Socket CLI adapter；fixture/live mode 共用 interface
     ├── worker_provider.py     # Nemotron API Worker、Codex/Claude subagent fallback 與 invocation evidence
     └── sandbox.py             # OrbStack/OpenShell readiness 與 sandbox install orchestration

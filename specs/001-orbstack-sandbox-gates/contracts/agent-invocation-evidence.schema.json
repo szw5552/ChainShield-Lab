@@ -9,6 +9,10 @@
     "model",
     "status",
     "request_id",
+    "run_id",
+    "finding_status",
+    "boundary_violation",
+    "boundary_violation_reasons",
     "task_packet_path",
     "input_artifacts",
     "output_artifact_path",
@@ -86,6 +90,33 @@
     "sanitized": {
       "type": "boolean",
       "const": true
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "finding_status": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "clear",
+        "concern",
+        "inconclusive",
+        null
+      ],
+      "description": "Required as clear/concern/inconclusive when status=pass; null for failed/skipped provider attempts."
+    },
+    "boundary_violation": {
+      "type": "boolean",
+      "description": "True when Worker output asks for shell/scanner/sandbox/host lifecycle execution or unauthorized tool invocation."
+    },
+    "boundary_violation_reasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     }
   }
 }

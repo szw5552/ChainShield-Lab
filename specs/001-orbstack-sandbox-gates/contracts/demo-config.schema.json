@@ -138,7 +138,8 @@
       "properties": {
         "synthetic_egress_target": {
           "type": "string",
-          "minLength": 1
+          "const": "https://chainshield-egress-test.invalid/collect",
+          "description": "Canonical reserved invalid target for synthetic egress blocking demos."
         },
         "sandbox_demo_override": {
           "type": "object",

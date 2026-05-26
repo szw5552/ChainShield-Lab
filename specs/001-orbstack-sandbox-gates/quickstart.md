@@ -5,7 +5,7 @@
 
 ## 1. 安全展示路徑總覽
 
-本 PoC 有三種展示路徑：
+本 PoC 有四種展示路徑：
 
 1. **Fixture-first 決策展示**：使用已清理 Snyk/Socket/OpenShell reports，不需要 scanner token，也不執行 live sandbox install。
 2. **Live scanner gate 展示**：在 npm fixture 上執行 Snyk/Socket，將 live reports 交給 Supervisor 判讀。
@@ -97,7 +97,7 @@ pytest tests/contract tests/unit
       "enabled": false,
       "reason": null
     },
-    "synthetic_egress_target": "https://blocked-egress.invalid/payload"
+    "synthetic_egress_target": "https://chainshield-egress-test.invalid/collect"
   }
 }
 ```
@@ -138,8 +138,8 @@ socket scan create --report --json .
 - Snyk report 若包含 high/critical vulnerability，Supervisor 產生 `deny`。
 - Socket report 若 `unhealthy`、organization policy violation、malware/supply-chain risk，或可判定的 policy failure exit code，Supervisor 產生 `deny`；不可解析或未知 exit code 產生 `manual_review`。
 - Live scanner 不可用時，改用 sanitized fixture reports，不阻塞 fixture-first demo。
-- Snyk live scanner 必須在 5 分鐘內完成或輸出 timeout failure evidence。
-- Socket live scanner 必須在 5 分鐘內完成或輸出 timeout failure evidence。
+- Snyk live scanner 必須在 120 秒內完成或輸出 timeout failure evidence。
+- Socket live scanner 必須在 120 秒內完成或輸出 timeout failure evidence。
 - Timeout evidence 必須包含 start/end time、exit code 或 timeout reason、sanitized command summary，且不得保存 token 或 auth file。
 
 ## 7. OrbStack/OpenShell live sandbox 展示
@@ -163,16 +163,17 @@ python scripts/run-demo.py --config demo-config.live-sandbox.json --sandbox-only
 - postinstall 嘗試讀取 sandbox allowlist 外的合成 canary secret 時失敗。
 - postinstall 嘗試連到合成測試目的地時，因 default-deny egress 失敗。
 - OpenShell deny log 或等價失敗證據同時包含 file read block 與 network egress block。
-- 每筆 OpenShell containment evidence 至少包含 event type、blocked path 或 blocked target、policy/rule identifier、result、timestamp、artifact path、live/fixture source marker 與 sanitized marker。
+- 每筆 OpenShell containment evidence 至少包含 event type、blocked path 或 blocked target、policy/rule identifier、result、timestamp、artifact path、`source_kind` (`live` 或 `fixture`) 與 sanitized marker。
 - 若只取得其中一種 evidence，不得宣稱 containment 成功；decision 必須標示 evidence 不足或 `manual_review`。
 - OrbStack/OpenShell live sandbox install demo 必須在 5 分鐘內完成，或輸出 readiness、timeout 或 containment insufficiency failure evidence。
 - 任一 timeout 或 readiness failure 不得觸發 host `npm install` 或 host `postinstall`。
 
 ### Live timeout 與 failure evidence
 
-- Snyk live scanner、Socket live scanner 與 OrbStack/OpenShell live sandbox install demo 都必須在 5 分鐘內完成或明確失敗。
+- Snyk live scanner 與 Socket live scanner 各自必須在 120 秒內完成或明確失敗；OrbStack/OpenShell live sandbox install demo 必須在 5 分鐘內完成或明確失敗。
 - Failure evidence 必須標示 failed gate、start/end time、timeout reason 或 readiness reason、artifact path、sanitized marker 與建議下一步。
 - 若本機缺少 live tool，保留 sanitized fixture evidence 與 manual observation artifact 作為替代展示，不得回退到宿主機直接執行惡意 PoC。
+- Manual observation 只能作為 `manual_review` 的說明性證據或人工驗證紀錄；不得用來滿足最終 `allow` 所需的 gate evidence。
 
 ## 8. Nemotron Worker 與 subagent fallback 展示
 
@@ -207,10 +208,12 @@ Demo config 啟用 Worker provider 時：
 
 - CLI 產生 sanitized `reports/worker-task-packet.json`，只包含 artifact references、evidence checklist 與 request metadata。
 - Nemotron 3 Nano Worker 只產生 worker evidence summary，不直接執行 shell command，也不裁決 `allow`/`deny`。
+- 成功的 worker evidence summary 必須包含 `finding_status`，且值只能是 `clear`、`concern` 或 `inconclusive`；只有 `clear` 可在 deterministic gate 皆通過時支援 `allow`，`concern` 或 `inconclusive` 只能阻止 `allow` 並導向 `manual_review`，不得直接形成 `deny`。
 - Nemotron API timeout、401/403、429、5xx 或 response 無法解析時，系統產生 provider failure evidence，並建立 Codex/Claude subagent fallback packet。
 - 本地 subagent fallback 必須使用 `.agents/skills/chainshield-worker/SKILL.md`，只讀取 sanitized task packet 與 artifact references。
 - 所有 provider 都 unavailable 且 demo config 要求 live worker evidence 時，Supervisor 輸出 `manual_review`，列出 missing worker provider evidence 與下一步。
 - Worker invocation artifact 不得包含 `NVIDIA_API_KEY`、token、真實秘密、未清理 prompt、原始敏感 log 或 host-sensitive path。
+- 若 Worker output 要求執行 shell command、scanner/sandbox command、host lifecycle script 或未授權 tool invocation，必須記錄為 worker boundary violation evidence；該 output 不得被採用為可執行任務，且除非 deterministic gate 另有明確 `deny`，Supervisor 應輸出 `manual_review`。
 
 ## 9. Markdown 摘要 30 秒可讀性檢查
 

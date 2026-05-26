@@ -10,6 +10,7 @@
 **Fields**:
 
 - `request_id`: 字串；每次評估唯一，必須出現在所有輸出 artifact。
+- `run_id`: 字串；repository-local 決策追蹤 ID，由 demo config path、fixture identity、timestamp 與 evidence hash 組成，必須出現在 Gate Evidence 與 Supervisor Decision。
 - `package_manager`: enum；本功能只允許 `npm`。
 - `package_name`: 字串；可為 fixture package 名稱或待評估 package 名稱。
 - `package_source`: 字串；可為 fixture path、tarball path 或 registry reference；不得指向 public publish action。
@@ -38,7 +39,7 @@
 - `worker_provider.enabled`: boolean；是否啟用 AI Worker provider evidence path。
 - `worker_provider.primary`: enum `nemotron_api | disabled`；啟用時預設為 `nemotron_api`。
 - `worker_provider.fallbacks`: enum 陣列；允許值為 `codex_subagent`、`claude_subagent`，依序嘗試。
-- `worker_provider.timeout_seconds`: 整數；單一 provider 嘗試逾時秒數。
+- `worker_provider.timeout_seconds`: 整數；單一 provider 嘗試逾時秒數，預設為 60 秒。
 - `worker_provider.output_path`: 字串；sanitized worker invocation evidence output path。
 - `fixtures.poc_app`: 字串；npm app fixture path。
 - `fixtures.malicious_package`: 字串；PoC-only package path。
@@ -68,6 +69,7 @@
 **Fields**:
 
 - `gate`: enum `snyk | socket | openshell`。
+- `run_id`: 字串；必須對應同一次 Supervisor Decision 的 repository-local `run_id`。
 - `status`: enum `pass | deny | manual_review | skipped`。
 - `source_kind`: enum `live | fixture | manual_observation`。
 - `source_path`: 字串或 null；report/log artifact path。
@@ -94,7 +96,7 @@
 - `enabled`: boolean。
 - `primary`: enum `nemotron_api | disabled`。
 - `fallbacks`: enum 陣列；允許 `codex_subagent`、`claude_subagent`。
-- `timeout_seconds`: 整數；建議 30-120 秒。
+- `timeout_seconds`: 整數；預設 60 秒，單一 provider 嘗試超過此值時必須產生 timeout failure evidence 並依序 fallback。
 - `base_url_env`: 字串；預設 `NEMOTRON_BASE_URL`，值不得寫入 artifact。
 - `model_env`: 字串；預設 `NEMOTRON_MODEL`，未設定時使用 `nvidia/nemotron-3-nano-30b-a3b`。
 - `api_key_env`: 字串；固定為 `NVIDIA_API_KEY`。
@@ -116,6 +118,10 @@
 - `model`: 字串；例如 `nvidia/nemotron-3-nano-30b-a3b`、`local-codex` 或 `local-claude`。
 - `status`: enum `pass | manual_review | failed | skipped`。
 - `request_id`: 字串。
+- `run_id`: 字串；對應本次 repository-local Supervisor Decision。
+- `finding_status`: enum `clear | concern | inconclusive` 或 null；成功產生 worker evidence summary 時必填非 null，provider failed/skipped 時可為 null。
+- `boundary_violation`: boolean；若 Worker output 要求 shell command、scanner/sandbox execution、host lifecycle script 或未授權 tool invocation，必須為 true。
+- `boundary_violation_reasons`: 字串陣列；描述不可採用該 Worker output 的 sanitized 原因。
 - `task_packet_path`: 字串；sanitized worker task packet path。
 - `input_artifacts`: 字串陣列；只保存 artifact refs，不保存原始秘密內容。
 - `output_artifact_path`: 字串或 null。
@@ -130,6 +136,8 @@
 - Agent invocation evidence 不得包含 API key、token、未清理 prompt、原始 OpenShell 敏感 log 或真實 host path。
 - Worker provider 只產生 evidence summary；不得直接裁決 `allow`、`deny` 或執行 scanner/sandbox shell command。
 - `status=pass` 只代表 worker evidence summary 已成功產生，不代表 package 可安全安裝。
+- `finding_status=concern` 或 `finding_status=inconclusive` 只能阻止 `allow` 並導向 `manual_review`；不得直接形成 `deny`。
+- `boundary_violation=true` 的 Worker output 不得被採用為可執行任務；若沒有 deterministic gate deny，Supervisor 必須輸出 `manual_review`。
 
 ## 實體：Sandbox 展示環境 (Sandbox Demo Environment)
 
@@ -137,7 +145,7 @@
 
 **Fields**:
 
-- `runtime`: enum `orbstack | docker-compatible | unavailable`；本功能以 `orbstack` 為優先。
+- `runtime`: enum `orbstack | unavailable`；本功能唯一授權的 live sandbox runtime 是 OrbStack，Docker 相容性只作為 OrbStack readiness 的觀察條件，不代表可 fallback 到一般 Docker runtime。
 - `runtime_ready`: boolean。
 - `openshell_ready`: boolean。
 - `policy_path`: 字串或 null。
@@ -162,6 +170,7 @@
 **Fields**:
 
 - `request_id`: 字串。
+- `run_id`: 字串；repository-local 決策追蹤 ID，必須可追溯到 demo config path、fixture identity、timestamp 與 evidence hash。
 - `decision`: enum `allow | deny | manual_review`。
 - `summary`: 字串；短摘要。
 - `primary_reasons`: 字串陣列。
@@ -182,8 +191,9 @@ collecting_evidence -> deny          # 任一 gate 有明確 deny
 collecting_evidence -> manual_review # 無明確 deny 且證據缺失/衝突/不可解析
 collecting_evidence -> allow         # Snyk + Socket pass；若執行 sandbox demo，OpenShell containment 也 pass
 collecting_evidence -> worker_summarizing # worker_provider.enabled=true 且 gate evidence 已足以建立 task packet
-worker_summarizing -> manual_review      # 所有 Worker provider 不可用且要求 live worker evidence
-worker_summarizing -> allow|deny|manual_review # Supervisor 依 deterministic gate rules 裁決
+worker_summarizing -> manual_review      # Worker evidence 缺失、失敗、互相衝突、boundary violation、finding_status=concern/inconclusive，且沒有 deterministic gate deny
+worker_summarizing -> allow              # deterministic gate 皆通過且 Worker finding_status=clear
+worker_summarizing -> deny               # deterministic gate 已有明確 deny；Worker concern 不得直接形成 deny
 ```
 
 **Validation Rules**:
@@ -194,6 +204,7 @@ worker_summarizing -> allow|deny|manual_review # Supervisor 依 deterministic ga
 - `manual_review` 必須阻止 install-time demo，直到 evidence 補齊或人工覆核。
 - `sandbox_demo_override.enabled=true` 只能允許受控 sandbox 展示繼續執行，不得覆寫最終 `deny` 決策。
 - Worker provider evidence 不得覆寫 Snyk/Socket/OpenShell gate rules；缺失或失敗時若沒有明確 gate deny，必須輸出 `manual_review`。
+- 既有 `manual_review` decision artifact 不得被人工直接改寫或重用為 `allow`；只能補齊 sanitized evidence/config 後重新執行 Supervisor，產生新的 decision artifact。
 
 ## 實體：展示輸出 (Demo Output)
 

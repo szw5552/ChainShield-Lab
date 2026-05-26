@@ -16,7 +16,7 @@
 
 - [ ] T001 建立 Python package 與測試目錄骨架，新增 `src/chainshield/__init__.py`、`tests/contract/.gitkeep`、`tests/integration/.gitkeep`、`tests/unit/.gitkeep`
 - [ ] T002 在 `pyproject.toml` 定義 Python 3.11+ 專案 metadata、`pytest` 與 `jsonschema` 測試相依套件
-- [ ] T003 [P] 在 `.gitignore` 排除 `reports/`、live scanner output、tarball、暫存 sandbox log 與本機 auth/token 檔案
+- [ ] T003 [P] 在 `.gitignore` 排除 repository root runtime output `/reports/`、live scanner output、tarball、暫存 sandbox log 與本機 auth/token 檔案；不得排除 `fixtures/reports/`，因為 sanitized fixture reports 必須可版本控管
 - [ ] T004 [P] 建立 fixture 與 policy 目錄保留檔，新增 `fixtures/reports/.gitkeep`、`fixtures/configs/.gitkeep`、`fixtures/canary/.gitkeep`、`policies/.gitkeep`
 
 ---
@@ -32,7 +32,7 @@
 - [ ] T005 [P] 新增 demo config schema contract test 並確認 red，覆蓋 valid/invalid config、`sandbox_demo_override`、禁止額外欄位，以及 fixture/policy/output path 的 repository-local、parent traversal、home expansion (`~` / `$HOME`)、absolute sensitive path、auth/token/SSH/cloud profile filename/path pattern、symlink escape 驗證與 output path / decision artifact collision case 於 `tests/contract/test_demo_config_schema.py`
 - [ ] T006 [P] 新增 gate evidence 與 supervisor decision schema contract test 並確認 red，覆蓋 required fields 與 sanitized evidence 於 `tests/contract/test_evidence_decision_schema.py`
 - [ ] T080 [P] 新增 shared Supervisor static gate decision core unit test 並確認 red，僅覆蓋 foundational static gate matrix：Snyk deny、Socket deny、缺失 evidence -> `manual_review`、`scanner_mode.snyk=skip` / `scanner_mode.socket=skip` 且無其他明確 deny 時 -> `manual_review` 並標示 `missing_gates`、static gate `deny` 不可被 sandbox demo override 改判為 `allow`，於 `tests/unit/test_supervisor_decisions.py`
-- [ ] T059 [P] 新增 Worker provider config 與 agent invocation evidence schema contract test 並確認 red，覆蓋 `worker_provider.enabled`、Nemotron provider defaults、每個 provider 嘗試的預設 `timeout_seconds=60`、固定 fallback order `nemotron_api` -> `codex_subagent` -> `claude_subagent` -> `manual_review`、`agent_invocations` 與 API key redaction 於 `tests/contract/test_worker_provider_contract.py`
+- [ ] T059 [P] 新增 Worker provider config 與 agent invocation evidence schema contract test 並確認 red，覆蓋 `worker_provider.enabled`、Nemotron provider defaults、每個 provider 嘗試的預設 `timeout_seconds=60`、canonical `provider_chain` `nemotron_api` -> `codex_subagent` -> `claude_subagent` -> `manual_review`、`fallback_order_after_primary_failure` `codex_subagent` -> `claude_subagent` -> `manual_review`、`agent_invocations` 與 API key redaction 於 `tests/contract/test_worker_provider_contract.py`
 - [ ] T071 [P] 新增 artifact sanitizer unit test 並確認 red，覆蓋 token/API key、SSH key、cloud profile、個人 `.env` pattern、未遮罩 host-sensitive path 與 raw scanner/sandbox log 片段；sanitizer 命中時必須拒絕保存原始 artifact、產生 sanitized failure reason，並要求後續 scanner/sandbox 不得執行，於 `tests/unit/test_artifact_sanitizer.py`
 - [ ] T073 [P] 新增 `run_id` generation unit test 並確認 red，覆蓋 `run_id` 必須由 repository-local demo config path、fixture identity、timestamp 與 evidence hash 組成，且相同輸入在固定 timestamp/hash 下可重現、不同 fixture 或 evidence hash 必須產生不同 `run_id`，於 `tests/unit/test_run_id.py`
 - [ ] T007 新增 invalid config integration test 並確認 red，驗證 `manual_review` 決策且不呼叫 scanner/sandbox；同時覆蓋 output path 或 decision artifact 已存在時拒絕新的 run、不得覆寫既有 evidence/decision artifact，並要求使用新的 output path，於 `tests/integration/test_invalid_config_blocks_execution.py`
@@ -42,12 +42,12 @@
 - [ ] T010 實作 decision artifact 寫入器與 atomic JSON output helper；若 output path 或 decision artifact 已存在或被目前 run 鎖定，必須拒絕覆寫、回傳 `manual_review` failure reason，並要求使用新的 output path；所有 artifact 寫入前必須呼叫 T072 sanitizer 於 `src/chainshield/artifacts.py`
 - [ ] T074 實作 `run_id` builder，從 demo config path、fixture identity、timestamp 與 evidence hash 建立 repository-local 可追溯 ID，並串接 Demo Config model 與 Supervisor decision model，於 `src/chainshield/config.py`、`src/chainshield/supervisor.py`
 - [ ] T079 實作 shared Supervisor static gate decision core，支援 Snyk deny、Socket deny、缺失 evidence -> `manual_review`、`scanner_mode.snyk=skip` / `scanner_mode.socket=skip` 且無其他明確 deny 時 -> `manual_review` 並填入 `missing_gates`、static gate `deny` 不可被 sandbox demo override 改判為 `allow`，供 US1、US2 與 US3 共用，於 `src/chainshield/supervisor.py`
-- [ ] T062 [P] 擴充並驗證既有 agent invocation evidence schema 與 supervisor decision schema，使 decision 可保存 `agent_invocations`、worker artifact paths、`worker_provider` missing gate、固定 provider fallback order、`finding_status` 與 boundary violation evidence；T059 的 red state 應來自缺少必要 Worker 欄位或 schema 約束，而非 schema 檔案不存在，於 `specs/001-orbstack-sandbox-gates/contracts/agent-invocation-evidence.schema.json`、`specs/001-orbstack-sandbox-gates/contracts/supervisor-decision.schema.json`
+- [ ] T062 擴充並驗證既有 agent invocation evidence schema 與 supervisor decision schema，使 decision 可保存 `agent_invocations`、worker artifact paths、`worker_provider` missing gate、canonical `provider_chain`、`fallback_order_after_primary_failure`、`finding_status` 與 boundary violation evidence；必須在 T059 已執行並確認 red state 後開始，且 T059 的 red state 應來自缺少必要 Worker 欄位或 schema 約束，而非 schema 檔案不存在，於 `specs/001-orbstack-sandbox-gates/contracts/agent-invocation-evidence.schema.json`、`specs/001-orbstack-sandbox-gates/contracts/supervisor-decision.schema.json`
 - [ ] T011 實作 `python -m chainshield.cli evaluate --config ...` CLI 骨架與 invalid config 失敗路徑於 `src/chainshield/cli.py`
 - [ ] T012 建立 invalid config 測試 fixture，包含格式錯誤、不安全 sandbox 設定、不合法 `sandbox_demo_override`、parent traversal path、home expansion path、repository 外部 path、敏感檔名樣式、auth/token/SSH/cloud profile path pattern 與 symlink escape path 於 `fixtures/configs/demo-invalid.json`
 - [ ] T013 [P] 驗證 Snyk 與 Socket CLI 可用命令、exit code、必要 flags 與 fixture/live mode fallback 行為，將 `snyk test --help`、`socket scan create --help`、`socket ci --help` 的本機確認結果、command、version、observed behavior、日期與 Socket exit-code classification table 記錄於 `specs/001-orbstack-sandbox-gates/research.md`；`quickstart.md` 僅引用該紀錄並保留操作摘要。classification table 至少區分 `policy_failure -> deny`、`auth_or_network_unavailable -> manual_review`、`parse_or_schema_error -> manual_review`、`timeout -> manual_review`、`unknown_exit_code -> manual_review`
 - [ ] T014 [P] 驗證 OpenShell/NemoClaw CLI、policy schema、filesystem allowlist、default-deny egress 與 host fallback 禁止行為，將本機版本、command、支援 flags、observed behavior、日期、限制與替代 fixture path 記錄於 `specs/001-orbstack-sandbox-gates/research.md`；`quickstart.md` 僅保留手動驗證步驟與預期 evidence 摘要
-- [ ] T063 [P] 驗證 NVIDIA Nemotron 3 Nano hosted API model id、OpenAI-compatible endpoint、必要 headers、timeout/error response 與 token redaction 規則，將官方文件依據、本機 smoke/manual check、command 或 request summary、observed behavior 與日期記錄於 `specs/001-orbstack-sandbox-gates/research.md`；`quickstart.md` 僅保留 NVIDIA API setup 與 fallback 操作摘要
+- [ ] T063 [P] 驗證 NVIDIA Nemotron 3 Nano hosted API model id、OpenAI-compatible endpoint、必要 headers、timeout/error response 與 token redaction 規則，將官方文件依據、本機 smoke/manual check、command 或 request summary、observed behavior 與日期記錄於 `specs/001-orbstack-sandbox-gates/research.md`；若觀察到的 endpoint/model 與 `plan.md` 暫定預設不同，必須更新 `research.md` 與 `quickstart.md`，且 implementation 必須以 `research.md` 驗證紀錄為準；`quickstart.md` 僅保留 NVIDIA API setup 與 fallback 操作摘要
 - [ ] T015 執行 implementation 前憲章符合性檢查，確認 TDD red-first 任務、BDD 情境追蹤、KISS 範圍、zh-TW 文件語言、performance/evidence gates 與 evidence-driven security decision 均已對應；若發現不符合，必須先修正 spec/plan/tasks，否則不得開始 user story implementation。檢查準則以本 task 固定於 `specs/001-orbstack-sandbox-gates/tasks.md`，執行結果以 task 完成狀態與必要的 follow-up issue/notes 表示，不在 implementation 期間回寫 tasks.md 內容
 
 **憲章符合性檢查**: Phase 2 完成後、任何 user story implementation 開始前，必須確認本 tasks.md 仍符合 constitution 的 TDD、BDD、KISS、UX language、performance/evidence 與 evidence-driven security decision 要求；若不符合，必須先修正 spec/plan/tasks，不得進入 user story implementation。
@@ -74,7 +74,7 @@
 ### 使用者故事 1 的實作 (Implementation)
 
 - [ ] T019 [P] [US1] 建立 sanitized Snyk fixture reports，包含 deny、low/medium residual risk 與 pass 範例於 `fixtures/reports/snyk-high-critical.json`、`fixtures/reports/snyk-low-medium.json`、`fixtures/reports/snyk-pass.json`
-- [ ] T020 [P] [US1] 建立 sanitized Socket fixture reports，包含 unhealthy、policy violation 與 pass 範例於 `fixtures/reports/socket-unhealthy.json`、`fixtures/reports/socket-pass.json`
+- [ ] T020 [P] [US1] 建立 sanitized Socket fixture reports，包含 unhealthy、organization policy violation、malware/supply-chain risk 與 pass 範例；若以單一 deny fixture 表示多種命中，fixture 內必須明確包含可測試的 policy violation 與 malware/supply-chain risk 欄位，於 `fixtures/reports/socket-unhealthy.json`、`fixtures/reports/socket-policy-violation.json`、`fixtures/reports/socket-malware-risk.json`、`fixtures/reports/socket-pass.json`
 - [ ] T021 [P] [US1] 建立 npm app fixture 與 PoC-only package manifest，避免任何 host install 執行；`fixtures/poc-app/package.json` 與 sanitized deterministic `fixtures/poc-app/package-lock.json` 必須只引用本機 PoC fixture，不得觸發 host lifecycle script；`fixtures/malicious-poc-pkg/package.json` 必須設定 `private: true`、不得包含 `publish` / `prepublishOnly` / registry 發布設定，且不得指向 public registry，於 `fixtures/poc-app/package.json`、`fixtures/poc-app/package-lock.json`、`fixtures/malicious-poc-pkg/package.json`
 - [ ] T022 [US1] 實作 Snyk report normalization，將 high/critical vulnerability 轉為 Gate Evidence `deny`，將只有 low/medium 且無 high/critical 的結果轉為 `pass` 並保留 residual risk 於 `src/chainshield/evidence.py`
 - [ ] T023 [US1] 實作 Socket report normalization，將 unhealthy、organization policy violation、malware/supply-chain risk 與依 `research.md` classification table 判定的 policy failure exit code 轉為 Gate Evidence，並將不可解析、auth/network unavailable、timeout 或未知 exit code 轉為 `manual_review` evidence 於 `src/chainshield/evidence.py`
@@ -95,24 +95,24 @@
 
 ### 使用者故事 2 的測試 (TDD mandatory)
 
-- [ ] T028 [P] [US2] 新增 sandbox readiness unit test 並確認 red，覆蓋 OrbStack/OpenShell 不可用時不得 host fallback、不得改用未經 spec 授權的一般 Docker runtime，且必須輸出 fixture/manual evidence path 或 `manual_review` 於 `tests/unit/test_sandbox_readiness.py`
-- [ ] T029 [P] [US2] 新增 OpenShell evidence unit test 並確認 red，覆蓋 file read block 與 egress block 皆存在才可 pass，且每筆 containment evidence 需包含 event type、blocked path/target、policy/rule identifier、result、timestamp、artifact path、live/fixture source marker 與 sanitized marker 於 `tests/unit/test_openshell_evidence.py`
+- [ ] T028 [P] [US2] 新增 sandbox readiness unit test 並確認 red，覆蓋 OrbStack/OpenShell 不可用時不得 host fallback、不得改用未經 spec 授權的一般 Docker runtime，且必須輸出 sanitized fixture evidence path 或 manual verification path；manual observation 只能支援 `manual_review` 或說明性註記，不得滿足 `allow`，於 `tests/unit/test_sandbox_readiness.py`
+- [ ] T029 [P] [US2] 新增 OpenShell evidence unit test 並確認 red，覆蓋 file read block 與 egress block 皆存在才可 pass，且每筆 containment evidence 需包含 event type、blocked path/target、policy/rule identifier、result、timestamp、artifact path、`source_kind` (`live` 或 `fixture`) 與 sanitized marker 於 `tests/unit/test_openshell_evidence.py`
 - [ ] T030 [P] [US2] 新增 sandbox gate integration test 並確認 red，驗證 `sandbox_mode=live` readiness 失敗輸出 `manual_review` 於 `tests/integration/test_sandbox_gate.py`
 - [ ] T031 [P] [US2] 新增 malicious PoC script safety unit test 並確認 red，驗證 `postinstall` 僅引用 synthetic canary 與 synthetic egress target，invalid config/static deny 情境不會觸發 host npm lifecycle script，`fixtures/poc-app/package-lock.json` 不指向 public registry，且惡意 package manifest 設定 `private: true`、不含 publish lifecycle script、public registry 或 publishConfig，於 `tests/unit/test_malicious_poc_safety.py`
-- [ ] T057 [P] [US2] 新增 live sandbox timeout/failure 測試或 manual verification 記錄並確認 red/manual path 已定義，覆蓋 OrbStack/OpenShell live sandbox install demo 必須在 5 分鐘內完成或輸出 timeout/failure evidence，且 evidence 包含 readiness status、start/end time、timeout reason、containment evidence status 與禁止 host fallback 的證據；若本機無 live tool，需在 `specs/001-orbstack-sandbox-gates/quickstart.md` 記錄 sanitized fixture/manual evidence 替代路徑
-- [ ] T058 [P] [US2] 新增 sandbox-only wrapper safety test 並確認 red，覆蓋 FR-013：`--sandbox-only` 在 invalid config、缺少 override reason、readiness 失敗或 static deny 情境下不會執行 host npm lifecycle script 且不會輸出 `allow`；static deny 情境依賴 T079 shared static gate decision core，於 `tests/integration/test_sandbox_only_wrapper.py`
+- [ ] T057 [P] [US2] 新增 live sandbox timeout/failure 測試或 manual verification path 並確認 red/manual path 已定義，覆蓋 OrbStack/OpenShell live sandbox install demo 必須在 5 分鐘內完成或輸出 timeout/failure evidence，且 evidence 包含 readiness status、start/end time、timeout reason、containment evidence status 與禁止 host fallback 的證據；若本機無 live tool，需在 `specs/001-orbstack-sandbox-gates/quickstart.md` 記錄 sanitized fixture 替代路徑與 manual observation note，且 manual observation 不得滿足 `allow`
+- [ ] T058 [P] [US2] 新增 sandbox-only wrapper safety test 並確認 red，覆蓋 FR-013：`--sandbox-only` 在 invalid config、缺少 override reason、readiness 失敗或 static deny 情境下不會執行 host npm lifecycle script 且不會輸出 `allow`；static deny、static skip 與 missing static gate 判斷必須呼叫 T079 shared static gate decision core，不得在 wrapper 測試或 wrapper 實作中建立第二套判斷矩陣，於 `tests/integration/test_sandbox_only_wrapper.py`
 
 ### 使用者故事 2 的實作 (Implementation)
 
 - [ ] T032 [US2] 建立 OpenShell policy 範本，定義 filesystem allowlist 與 default-deny network egress 於 `policies/openshell-npm-install.yaml`
-- [ ] T033 [P] [US2] 建立合成 canary secret fixture，明確標示 PoC-only 且不得引用真實秘密於 `fixtures/canary/canary-secret.txt`
-- [ ] T034 [P] [US2] 建立 sanitized OpenShell deny log fixture，包含 file read block、synthetic egress block、policy/rule identifier、timestamp、artifact path、live/fixture source marker 與 sanitized marker 於 `fixtures/reports/openshell-deny.log`
-- [ ] T035 [US2] 建立 PoC-only `postinstall` script，僅嘗試讀取 sandbox 內合成 canary secret fixture 與連線合成測試目的地，並在 script 註記禁止 host 執行與禁止真實秘密/真實外連於 `fixtures/malicious-poc-pkg/postinstall.js`
+- [ ] T033 [P] [US2] 建立合成 canary secret fixture，明確標示 PoC-only、只可掛載到 sandbox/container 內供 OpenShell filesystem allowlist 外讀取阻擋展示使用，且不得引用真實秘密於 `fixtures/canary/canary-secret.txt`
+- [ ] T034 [P] [US2] 建立 sanitized OpenShell deny log fixture，包含 file read block、synthetic egress block、policy/rule identifier、timestamp、artifact path、`source_kind=fixture` 與 sanitized marker 於 `fixtures/reports/openshell-deny.log`
+- [ ] T035 [US2] 建立 PoC-only `postinstall` script，僅嘗試讀取已掛載於 sandbox/container 內、但位於 OpenShell filesystem allowlist 之外的合成 canary secret fixture，並連線合成測試目的地；script 必須註記禁止 host 執行與禁止真實秘密/真實外連，於 `fixtures/malicious-poc-pkg/postinstall.js`
 - [ ] T036 [US2] 實作 OpenShell deny log normalization 與 containment pass 判斷於 `src/chainshield/evidence.py`
-- [ ] T037 [US2] 實作 OrbStack-first Docker 相容 runtime 與 OpenShell/NemoClaw readiness checks 於 `src/chainshield/sandbox.py`；若 OrbStack 不可用，live sandbox install demo 必須停止並輸出 `manual_review` 或 fixture/manual evidence path，不得 fallback 到宿主機或未經 spec 授權的一般 Docker runtime
+- [ ] T037 [US2] 實作 OrbStack-first Docker 相容 runtime 與 OpenShell/NemoClaw readiness checks 於 `src/chainshield/sandbox.py`；若 OrbStack 不可用，live sandbox install demo 必須停止並輸出 `manual_review`、sanitized fixture evidence path 或 manual verification path；manual observation 不得滿足 `allow`，且不得 fallback 到宿主機或未經 spec 授權的一般 Docker runtime
 - [ ] T038 [US2] 實作受控 sandbox install orchestration，禁止 host fallback 並記錄 start/end runtime 於 `src/chainshield/sandbox.py`
-- [ ] T039 [US2] 串接 sandbox demo override safety 與 sandbox gate flow（依賴 T079 shared static gate decision core），只有 demo config 明確設定 `sandbox_demo_override.enabled=true` 且提供 reason 時才可在靜態 gate deny 後進入 P2 sandbox 展示，且最終 Supervisor 決策不得因此由 `deny` 改為 `allow` 於 `src/chainshield/cli.py`
-- [ ] T040 [US2] 建立 sandbox-only demo wrapper，支援 `--config` 與 `--sandbox-only` 並委派給 CLI；覆蓋 FR-013 且依賴 T079 shared static gate decision core，`--sandbox-only` 仍必須執行 demo config 驗證、static gate 判讀、OrbStack/OpenShell readiness、安全路徑檢查與必要的 `sandbox_demo_override` reason 檢查，禁止 host lifecycle script，且不得將 static gate `deny` 改判為 `allow` 於 `scripts/run-demo.py`
+- [ ] T039 [US2] 串接 sandbox demo override safety 與 sandbox gate flow（依賴 T079 shared static gate decision core）；CLI 只能呼叫 shared core 取得 static gate `deny` / `manual_review` / skip 結果，不得重建 Snyk/Socket 判斷矩陣；只有 demo config 明確設定 `sandbox_demo_override.enabled=true` 且提供 reason 時才可在靜態 gate deny 後進入 P2 sandbox 展示，且最終 Supervisor 決策不得因此由 `deny` 改為 `allow` 於 `src/chainshield/cli.py`
+- [ ] T040 [US2] 建立 sandbox-only demo wrapper，支援 `--config` 與 `--sandbox-only` 並委派給 CLI；覆蓋 FR-013 且依賴 T079 shared static gate decision core，wrapper 不得自行判讀 Snyk/Socket static gate、不得建立第二套 allow/deny/manual_review 矩陣；`--sandbox-only` 仍必須執行 demo config 驗證、static gate 判讀、OrbStack/OpenShell readiness、安全路徑檢查與必要的 `sandbox_demo_override` reason 檢查，禁止 host lifecycle script，且不得將 static gate `deny` 改判為 `allow` 於 `scripts/run-demo.py`
 - [ ] T041 [US2] 建立 live sandbox 與 fixture sandbox demo configs，引用 OpenShell policy、canary、sanitized log 與 `sandbox_demo_override` 理由於 `fixtures/configs/demo-live-sandbox.json`、`fixtures/configs/demo-fixture-sandbox.json`
 - [ ] T056 [US2] 依據 T057 已定義的 timeout/failure 測試或 manual verification path，實作 live sandbox install timeout 與 failure evidence，確保 OrbStack/OpenShell live sandbox install demo 在 5 分鐘內完成或明確失敗，並輸出 readiness status、start/end time、timeout reason、containment evidence status 與禁止 host fallback 的證據於 `src/chainshield/sandbox.py`
 
@@ -133,8 +133,9 @@
 - [ ] T044 [P] [US3] 新增 JSON 與 Markdown output integration test 並確認 red，覆蓋摘要含缺失 gate、next actions、artifact paths、demo-only scope disclaimer，且 Markdown 摘要必須在頂部固定呈現 result、主要理由、缺失 gate 與下一步，以支援 30 秒內辨識核心資訊；`manual_review` 的 next actions 必須要求補齊 sanitized evidence/config 並重新執行 Supervisor，不得提供人工直接改判為 `allow` 的操作路徑，於 `tests/integration/test_decision_outputs.py`
 - [ ] T054 [US3] 新增 sandbox-executed allow sufficiency unit test 並確認 red，專門覆蓋已執行 sandbox install demo 時缺少 file read block、缺少 egress block、OpenShell containment 不完整或 evidence 欄位不完整皆不得輸出 `allow`；只有 Snyk+Socket pass 且 OpenShell file/egress evidence 皆完整時才符合 `allow` 條件，於 `tests/unit/test_supervisor_decisions.py`
 - [ ] T060 [P] [US3] 新增 Nemotron request sanitization 與 Worker output boundary unit test 並確認 red，驗證 request 只包含 worker task packet、artifact refs、evidence checklist 與 sanitized metadata，不包含 `NVIDIA_API_KEY`、token、真實秘密、host-sensitive path 或未清理 log；同時驗證 Nemotron/subagent 回傳若包含 shell command、scanner/sandbox execution request、host lifecycle script 指令或未授權 tool invocation，系統必須拒絕採用該 Worker output，產生 sanitized boundary violation evidence，且不得觸發 scanner/sandbox 執行，於 `tests/unit/test_worker_provider.py`
-- [ ] T061 [P] [US3] 新增 Worker provider fallback unit test 並確認 red，覆蓋 Nemotron timeout/auth/rate limit/malformed response 後必須依序 fallback：`codex_subagent` -> `claude_subagent` -> `manual_review`；每個 provider 嘗試預設 60 秒 timeout 後才 fallback；所有 provider unavailable 時輸出 `manual_review` 且不啟動 unsafe sandbox install，於 `tests/unit/test_worker_provider.py`
+- [ ] T061 [P] [US3] 新增 Worker provider fallback unit test 並確認 red，覆蓋 Nemotron timeout/auth/rate limit/malformed response 後必須依 canonical `provider_chain` 繼續執行，且 `fallback_order_after_primary_failure` 固定為 `codex_subagent` -> `claude_subagent` -> `manual_review`；每個 provider 嘗試預設 60 秒 timeout 後才 fallback；所有 provider unavailable 時輸出 `manual_review` 且不啟動 unsafe sandbox install，於 `tests/unit/test_worker_provider.py`
 - [ ] T075 [P] [US3] 新增 Worker evidence allow-sufficiency unit test 並確認 red，覆蓋 `worker_provider.enabled=true` 時 `finding_status=clear` 只能在 Snyk/Socket/必要 OpenShell gate 皆通過時支援 `allow`，`finding_status=concern` 或 `inconclusive` 必須輸出 `manual_review` 且不得直接形成 `deny`，worker evidence 缺失、失敗或互相衝突時也必須輸出 `manual_review`，於 `tests/unit/test_supervisor_decisions.py`
+- [ ] T081 [P] [US3] 新增 Worker disabled/no-invocation unit test 並確認 red，覆蓋 demo config 未設定 `worker_provider` 或設定 `worker_provider.enabled=false` 時，CLI/Supervisor 不得建立 worker task packet、不得呼叫 Nemotron/Codex/Claude provider、不得產生 `agent_invocations`，且最終決策只依 Snyk、Socket 與必要 OpenShell deterministic gate evidence 判斷，於 `tests/unit/test_worker_provider.py`、`tests/unit/test_supervisor_decisions.py`
 
 ### 使用者故事 3 的實作 (Implementation)
 
@@ -142,7 +143,7 @@
 - [ ] T078 [US3] 實作 manual review rerun guard，當輸入指向既有 `manual_review` decision artifact 或嘗試重用既有 output path 產生 `allow` 時，必須拒絕並要求以更新後 sanitized evidence/config 重新執行，於 `src/chainshield/supervisor.py`、`src/chainshield/artifacts.py`
 - [ ] T046 [US3] 實作 Markdown summary renderer，固定顯示 result、理由、gate evidence、缺失 gate、下一步與 demo-only npm supply-chain defense PoC scope disclaimer 於 `src/chainshield/artifacts.py`
 - [ ] T047 [US3] 串接 CLI output path、Markdown 可選輸出與 performance timestamps 於 `src/chainshield/cli.py`
-- [ ] T064 [US3] 實作 Worker provider config model、provider chain selection、預設 60 秒 provider timeout、worker task packet builder、Worker output boundary validator 與 sanitized invocation evidence writer；Worker output 只能被解析為 evidence summary，若包含 shell command、scanner/sandbox execution request 或未授權 tool invocation，必須轉為 sanitized failure evidence 並阻止後續 unsafe execution，於 `src/chainshield/worker_provider.py`
+- [ ] T064 [US3] 實作 Worker provider config model、disabled/no-op path、provider chain selection、預設 60 秒 provider timeout、worker task packet builder、Worker output boundary validator 與 sanitized invocation evidence writer；當 `worker_provider` 未設定或 `worker_provider.enabled=false` 時不得建立 task packet、不得呼叫任何 provider、不得產生 `agent_invocations`，且決策必須回到 deterministic Supervisor gate rules；Worker output 只能被解析為 evidence summary，若包含 shell command、scanner/sandbox execution request 或未授權 tool invocation，必須轉為 sanitized failure evidence 並阻止後續 unsafe execution，於 `src/chainshield/worker_provider.py`
 - [ ] T065 [US3] 實作 Nemotron 3 Nano NVIDIA API adapter，使用 `NVIDIA_API_KEY`、`NEMOTRON_BASE_URL` 與 `NEMOTRON_MODEL`，支援 timeout、401/403、429、5xx、malformed response 與 token redaction failure evidence 於 `src/chainshield/worker_provider.py`
 - [ ] T066 [US3] 實作 Codex/Claude subagent fallback packet 與 ChainShield Worker skill handoff，嚴格依序執行 `codex_subagent` -> `claude_subagent` -> `manual_review` fallback，產生可交給本地 subagent 的 sanitized prompt/task packet，且不要求 OpenAI/Anthropic API key 於 `src/chainshield/worker_provider.py`
 - [ ] T067 [US3] 建立 ChainShield Worker agent skill，定義 subagent 只能讀取 sanitized worker task packet 與 artifact refs、產生 worker evidence summary、不得執行 shell command、不得輸出要求 scanner/sandbox/host lifecycle script 執行的 tool invocation，也不得裁決 final decision 於 `.agents/skills/chainshield-worker/SKILL.md`
@@ -161,9 +162,9 @@
 
 - [ ] T050 [P] 新增 artifact redaction integration test，驗證 T072 sanitizer 對 fixture/report/output 的保存前檢查，確保不含 token、SSH key、cloud profile 或個人 `.env` 內容於 `tests/integration/test_artifact_redaction.py`
 - [ ] T051 新增 fixture scanner、report processing 與 decision performance test，要求 fixture scanner 在 30 秒內完成或明確失敗、Supervisor report processing 在 30 秒內完成或明確失敗，且 fixture-first Supervisor 決策總流程在 10 秒內完成，測試需保存 start/end timestamps 與 timeout/failure reason 於 `tests/integration/test_decision_performance.py`
-- [ ] T052 執行完整 `pytest tests/` 並依失敗結果修正文檔或測試 fixture 於 `tests/`
+- [ ] T052 執行完整 `pytest tests/`；若失敗，必須依根因修正 production/PoC code、測試、sanitized fixture 或文件，不得以放寬測試或改寫 fixture 掩蓋實作缺陷，直到完整測試通過或以 quickstart 記錄明確的 manual-only 驗證限制於 `tests/`
 - [ ] T053 執行 quickstart fixture-first 驗證並更新預期輸出、runtime、安全注意事項與 Markdown 30 秒可讀性 manual check 結果；CLI/tool verification 結論必須引用 `specs/001-orbstack-sandbox-gates/research.md` 的版本控管驗證紀錄，於 `specs/001-orbstack-sandbox-gates/quickstart.md`
-- [ ] T070 執行 Nemotron Worker live smoke test 或 fallback manual verification，更新 NVIDIA API setup、固定 fallback order `nemotron_api` -> `codex_subagent` -> `claude_subagent` -> `manual_review`、agent skill 使用方式與 provider unavailable 的 `manual_review` evidence 於 `specs/001-orbstack-sandbox-gates/quickstart.md`
+- [ ] T070 執行 Nemotron Worker live smoke test 或 fallback manual verification，更新 NVIDIA API setup、canonical `provider_chain` `nemotron_api` -> `codex_subagent` -> `claude_subagent` -> `manual_review`、`fallback_order_after_primary_failure` `codex_subagent` -> `claude_subagent` -> `manual_review`、agent skill 使用方式與 provider unavailable 的 `manual_review` evidence 於 `specs/001-orbstack-sandbox-gates/quickstart.md`
 
 ---
 
@@ -208,10 +209,10 @@ Phase 1 Setup
 ## 平行執行機會 (Parallel Opportunities)
 
 - Phase 1 的 T003、T004 可與 T002 平行，因為修改不同檔案。
-- Phase 2 的 T005、T006、T080、T059、T071、T073、T013、T014、T063 可平行撰寫或驗證；T007 需等 CLI skeleton 設計確認但可先寫 failing test；T072 需接續 T071，T010 需在 T072 sanitizer interface 可用後串接 artifact 寫入；T074 需接續 T073，T079 需在 T080 red state 與 shared schema/model helper 可用後執行。
+- Phase 2 的 T005、T006、T080、T059、T071、T073、T013、T014、T063 可平行撰寫或驗證；T007 需等 CLI skeleton 設計確認但可先寫 failing test；T072 需接續 T071，T010 需在 T072 sanitizer interface 可用後串接 artifact 寫入；T074 需接續 T073，T079 需在 T080 red state 與 shared schema/model helper 可用後執行；T062 必須在 T059 red state 已確認後執行。
 - US1 的 T016、T017、T018、T055、T076、T077 可平行撰寫 tests；T019、T020、T021 可平行建立 fixture 檔。
 - US2 的 T028、T029、T030、T031、T057、T058 可平行撰寫 tests 或 manual verification path；T033、T034 可平行建立 sanitized fixture。
-- US3 的 T042、T043、T044、T060、T061、T075 可平行撰寫 tests；T054 需接續 T042 在同一測試檔補足 sandbox-executed allow sufficiency；T064、T065、T066、T068 需依序整合 Worker provider flow，且 T068 不得早於 T075 的 red state。
+- US3 的 T042、T043、T044、T060、T061、T075、T081 可平行撰寫 tests；T054 需接續 T042 在同一測試檔補足 sandbox-executed allow sufficiency；T064、T065、T066、T068 需依序整合 Worker provider flow，且 T064 不得早於 T081 的 red state，T068 不得早於 T075 的 red state。
 - Phase 6 的 T050 可與文件驗證工作平行，T052、T053、T070 應在收尾最後執行。
 
 ## 平行執行範例 (Parallel Examples)
@@ -245,6 +246,7 @@ Task: "T043 [US3] 新增 decision artifact contract test in tests/contract/test_
 Task: "T044 [US3] 新增 JSON 與 Markdown output integration test in tests/integration/test_decision_outputs.py"
 Task: "T060 [US3] 新增 Nemotron request sanitization unit test in tests/unit/test_worker_provider.py"
 Task: "T061 [US3] 新增 Worker provider fallback unit test in tests/unit/test_worker_provider.py"
+Task: "T081 [US3] 新增 Worker disabled/no-invocation unit test in tests/unit/test_worker_provider.py"
 ```
 
 ---

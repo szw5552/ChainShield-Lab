@@ -4,18 +4,94 @@
   "title": "ChainShield Gate Evidence",
   "description": "Snyk、Socket 或 OpenShell 的正規化 evidence；artifact 必須已清理。",
   "type": "object",
-  "required": ["gate", "status", "source_kind", "source_path", "command", "exit_code", "risk_level", "reasons", "observed_at", "sanitized"],
+  "required": [
+    "gate",
+    "run_id",
+    "status",
+    "source_kind",
+    "source_path",
+    "command",
+    "exit_code",
+    "risk_level",
+    "reasons",
+    "observed_at",
+    "sanitized"
+  ],
   "additionalProperties": false,
   "properties": {
-    "gate": { "type": "string", "enum": ["snyk", "socket", "openshell"] },
-    "status": { "type": "string", "enum": ["pass", "deny", "manual_review", "skipped"] },
-    "source_kind": { "type": "string", "enum": ["live", "fixture", "manual_observation"] },
-    "source_path": { "type": ["string", "null"] },
-    "command": { "type": ["string", "null"], "description": "命令摘要不得包含 token 或秘密。" },
-    "exit_code": { "type": ["integer", "null"] },
-    "risk_level": { "type": "string", "enum": ["none", "low", "medium", "high", "critical", "unknown"] },
-    "reasons": { "type": "array", "items": { "type": "string" } },
-    "observed_at": { "type": "string", "format": "date-time" },
-    "sanitized": { "type": "boolean", "const": true }
+    "gate": {
+      "type": "string",
+      "enum": [
+        "snyk",
+        "socket",
+        "openshell"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "deny",
+        "manual_review",
+        "skipped"
+      ]
+    },
+    "source_kind": {
+      "type": "string",
+      "enum": [
+        "live",
+        "fixture",
+        "manual_observation"
+      ]
+    },
+    "source_path": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "command": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "命令摘要不得包含 token 或秘密。"
+    },
+    "exit_code": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "risk_level": {
+      "type": "string",
+      "enum": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "critical",
+        "unknown"
+      ]
+    },
+    "reasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "observed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sanitized": {
+      "type": "boolean",
+      "const": true
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Repository-local run_id derived from demo config path, fixture identity, timestamp, and evidence hash."
+    }
   }
 }
