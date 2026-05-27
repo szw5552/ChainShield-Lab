@@ -5,7 +5,9 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from jsonschema import Draft202012Validator, RefResolver
+from jsonschema import Draft202012Validator
+from referencing import Registry, Resource
+from referencing.jsonschema import DRAFT202012
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONTRACTS_DIR = REPO_ROOT / "specs" / "001-orbstack-sandbox-gates" / "contracts"
@@ -19,21 +21,21 @@ def load_schema(name: str) -> dict[str, Any]:
 
 
 @lru_cache(maxsize=1)
-def _schema_store() -> dict[str, dict[str, Any]]:
-    store: dict[str, dict[str, Any]] = {}
+def _schema_registry() -> Registry:
+    resources = []
     for path in CONTRACTS_DIR.glob("*.schema.json"):
         schema = load_schema(path.name)
-        store[path.name] = schema
+        resource = Resource.from_contents(schema, default_specification=DRAFT202012)
+        resources.append((path.name, resource))
         if "$id" in schema:
-            store[schema["$id"]] = schema
-            store[schema["$id"].rsplit("/", 1)[-1]] = schema
-    return store
+            resources.append((schema["$id"], resource))
+            resources.append((schema["$id"].rsplit("/", 1)[-1], resource))
+    return Registry().with_resources(resources)
 
 
 def validator_for(name: str) -> Draft202012Validator:
     schema = load_schema(name)
-    resolver = RefResolver.from_schema(schema, store=_schema_store())
-    return Draft202012Validator(schema, resolver=resolver)
+    return Draft202012Validator(schema, registry=_schema_registry())
 
 
 def validate_contract(name: str, instance: Any, *, raise_on_error: bool = True):
