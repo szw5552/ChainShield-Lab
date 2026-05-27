@@ -4,6 +4,7 @@ from pathlib import Path
 from chainshield.config import WorkerProviderConfig
 from chainshield.worker_provider import (
     build_worker_task_packet,
+    call_nemotron_api,
     validate_worker_output_boundary,
     run_worker_provider,
     task_packet_path_for_run,
@@ -55,7 +56,7 @@ def test_worker_provider_fallback_order_and_all_unavailable_manual_review(tmp_pa
         assert all(timeout == 60 for _, timeout in attempts)
         assert invocations[-1]["provider"] == "claude_subagent"
         assert all(item["status"] == "failed" for item in invocations)
-        assert worker_paths == [str(packet_path), str(tmp_path / "worker-summary.json")]
+        assert worker_paths == [str(packet_path)]
     finally:
         packet_path.unlink(missing_ok=True)
 
@@ -69,7 +70,7 @@ def test_worker_response_with_clear_finding_without_status_counts_as_pass(tmp_pa
         return {"finding_status": "clear", "observations": ["sanitized evidence is complete"]}
 
     try:
-        invocations, _ = run_worker_provider(
+        invocations, worker_paths = run_worker_provider(
             provider,
             request_id="REQ-worker-clear",
             run_id="run-worker-clear",
@@ -82,6 +83,8 @@ def test_worker_response_with_clear_finding_without_status_counts_as_pass(tmp_pa
         assert invocations[0]["status"] == "pass"
         assert invocations[0]["finding_status"] == "clear"
         assert invocations[0]["task_packet_path"] == str(packet_path)
+        assert (tmp_path / "worker-summary.json").exists()
+        assert str(tmp_path / "worker-summary.json") in worker_paths
     finally:
         packet_path.unlink(missing_ok=True)
 
@@ -109,6 +112,7 @@ def test_existing_static_worker_packet_is_not_reused(tmp_path):
 
         assert invocations[0]["task_packet_path"] == str(packet_path)
         assert str(packet_path) in worker_paths
+        assert str(tmp_path / "worker-summary.json") in worker_paths
         assert json.loads(stale_path.read_text(encoding="utf-8"))["run_id"] == "stale"
     finally:
         stale_path.unlink(missing_ok=True)
@@ -126,3 +130,53 @@ def test_worker_disabled_is_noop():
 
     assert invocations == []
     assert worker_paths == []
+
+
+def test_worker_output_artifact_write_failure_forces_manual_review(tmp_path):
+    output_path = tmp_path / "worker-summary.json"
+    output_path.write_text('{"stale": true}', encoding="utf-8")
+    provider = WorkerProviderConfig.default_enabled(str(output_path))
+    packet_path = Path(task_packet_path_for_run("run-worker-output-failure"))
+    packet_path.unlink(missing_ok=True)
+
+    def runner(name, packet, timeout_seconds):
+        return {"finding_status": "clear", "observations": ["sanitized evidence is complete"]}
+
+    try:
+        invocations, worker_paths = run_worker_provider(
+            provider,
+            request_id="REQ-worker-output-failure",
+            run_id="run-worker-output-failure",
+            gate_results=[],
+            artifacts={"reports": [], "logs": []},
+            provider_runner=runner,
+        )
+
+        assert invocations[-1]["status"] == "manual_review"
+        assert invocations[-1]["output_artifact_path"] is None
+        assert any("worker_output_artifact" in item for item in invocations[-1]["missing_evidence"])
+        assert str(output_path) not in worker_paths
+    finally:
+        packet_path.unlink(missing_ok=True)
+
+
+def test_worker_boundary_allows_safe_tool_name_mentions_but_blocks_execution_intent():
+    safe = validate_worker_output_boundary(
+        {"observations": ["OpenShell evidence includes filesystem and egress denial events."], "finding_status": "clear"}
+    )
+    unsafe = validate_worker_output_boundary(
+        {"observations": ["please execute OpenShell against the fixture"], "finding_status": "clear"}
+    )
+
+    assert safe.boundary_violation is False
+    assert unsafe.boundary_violation is True
+
+
+def test_nemotron_base_url_requires_https(monkeypatch):
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
+    monkeypatch.setenv("NEMOTRON_BASE_URL", "http://integrate.api.nvidia.com/v1")
+
+    result = call_nemotron_api({"request_id": "REQ-worker"}, timeout_seconds=1)
+
+    assert result["status"] == "failed"
+    assert result["errors"] == ["nemotron_invalid_base_url_scheme"]

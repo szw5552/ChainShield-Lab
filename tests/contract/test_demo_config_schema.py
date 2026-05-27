@@ -121,6 +121,38 @@ def test_demo_config_rejects_symlink_escape(tmp_path):
         link.unlink(missing_ok=True)
 
 
+def test_demo_config_rejects_broken_symlink_without_crashing():
+    link = Path("fixtures/configs/broken-symlink-report.json")
+    if link.exists() or link.is_symlink():
+        link.unlink()
+    link.symlink_to("missing-target.json")
+    try:
+        config = dict(BASE_CONFIG)
+        config["fixtures"] = dict(BASE_CONFIG["fixtures"])
+        config["fixtures"]["snyk_report"] = str(link)
+
+        with pytest.raises(ConfigValidationError) as excinfo:
+            validate_demo_config(config, config_path=Path("fixtures/configs/broken-symlink.json"))
+
+        assert "broken symlink" in str(excinfo.value)
+    finally:
+        link.unlink(missing_ok=True)
+
+
+def test_demo_config_allows_author_filename_without_sensitive_path_false_positive():
+    config = dict(BASE_CONFIG)
+    config["fixtures"] = dict(BASE_CONFIG["fixtures"])
+    config["fixtures"]["snyk_report"] = "fixtures/configs/demo-author-allow.json"
+    config["outputs"] = {
+        "decision_json": "reports/test-author-path-decision.json",
+        "markdown_summary": "reports/test-author-path-summary.md",
+    }
+
+    parsed = validate_demo_config(config, config_path=Path("fixtures/configs/author.json"))
+
+    assert parsed.fixtures["snyk_report"] == "fixtures/configs/demo-author-allow.json"
+
+
 def test_demo_config_rejects_output_collision(tmp_path):
     collision = Path("reports/collision-decision.json")
     collision.parent.mkdir(exist_ok=True)

@@ -157,6 +157,36 @@ def test_worker_finding_status_blocks_allow_without_direct_deny():
     assert decision.decision == "allow"
 
 
+def test_worker_clear_invocation_cannot_upgrade_static_deny():
+    clear_invocation = {
+        "provider": "nemotron_api",
+        "model": "nvidia/nemotron-3-nano-30b-a3b",
+        "status": "pass",
+        "request_id": "REQ-worker",
+        "run_id": "run-foundation",
+        "finding_status": "clear",
+        "boundary_violation": False,
+        "boundary_violation_reasons": [],
+        "task_packet_path": "reports/worker-task-packet.json",
+        "input_artifacts": [],
+        "output_artifact_path": "reports/worker-summary.json",
+        "observations": ["worker evidence is clear"],
+        "missing_evidence": [],
+        "errors": [],
+        "observed_at": "2026-05-27T00:00:00Z",
+        "sanitized": True,
+    }
+
+    decision = decide_static_gates(
+        [evidence("snyk", "deny"), evidence("socket", "pass")],
+        worker_provider=WorkerProviderConfig.default_enabled("reports/worker-summary.json"),
+        agent_invocations=[clear_invocation],
+    )
+
+    assert decision.decision == "deny"
+    assert "snyk" in decision.primary_reasons[0].lower()
+
+
 def test_worker_disabled_produces_no_agent_invocations():
     decision = decide_static_gates([evidence("snyk", "pass"), evidence("socket", "pass")])
     assert decision.agent_invocations == []

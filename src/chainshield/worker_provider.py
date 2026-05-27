@@ -7,8 +7,8 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import urlparse
 
 from .artifacts import ArtifactWriteError, redact_text, sanitize_text, write_json_artifact
 from .config import DEFAULT_WORKER_TIMEOUT_SECONDS, WorkerProviderConfig
@@ -18,12 +18,12 @@ DEFAULT_NEMOTRON_MODEL = "nvidia/nemotron-3-nano-30b-a3b"
 TASK_PACKET_PATH = "reports/worker-task-packet.json"
 UNSAFE_WORKER_PATTERNS = [
     re.compile(r"\bnpm\s+(?:install|run|exec|pack)\b", re.I),
-    re.compile(r"\bpostinstall\b", re.I),
+    re.compile(r"\b(?:run|execute|invoke|spawn|launch)\b.{0,40}\bpostinstall\b", re.I),
     re.compile(r"\bsnyk\s+test\b", re.I),
     re.compile(r"\bsocket\s+(?:ci|scan)\b", re.I),
-    re.compile(r"\bopenshell\b|\bnemoclaw\b", re.I),
-    re.compile(r"\b(?:shell|subprocess|exec)\s*(?:command|call|request)?\b", re.I),
-    re.compile(r"\b(?:tool_call|function_call|unauthorized tool)\b", re.I),
+    re.compile(r"\b(?:run|execute|invoke|spawn|launch)\b.{0,40}\b(?:openshell|nemoclaw)\b", re.I),
+    re.compile(r"\b(?:run|execute|invoke|spawn|launch)\b.{0,40}\b(?:shell|subprocess|exec)\b", re.I),
+    re.compile(r"\b(?:tool_call|function_call)\s*\(|\bexecute\s+tool\b|\bunauthorized tool invocation\b", re.I),
 ]
 
 
@@ -146,6 +146,9 @@ def call_nemotron_api(packet: dict[str, Any], *, timeout_seconds: int) -> dict[s
         }
 
     base_url = os.environ.get("NEMOTRON_BASE_URL", DEFAULT_NEMOTRON_BASE_URL).rstrip("/")
+    parsed_url = urlparse(base_url)
+    if parsed_url.scheme != "https" or not parsed_url.netloc:
+        return {"status": "failed", "finding_status": None, "errors": ["nemotron_invalid_base_url_scheme"]}
     model = os.environ.get("NEMOTRON_MODEL", DEFAULT_NEMOTRON_MODEL)
     body = json.dumps(
         {
@@ -238,6 +241,35 @@ def _normalize_response(
     )
 
 
+def _persist_worker_output(invocation: dict[str, Any], output_path: str) -> dict[str, Any]:
+    payload = {
+        "provider": invocation["provider"],
+        "model": invocation["model"],
+        "status": invocation["status"],
+        "request_id": invocation["request_id"],
+        "run_id": invocation["run_id"],
+        "finding_status": invocation["finding_status"],
+        "boundary_violation": invocation["boundary_violation"],
+        "task_packet_path": invocation["task_packet_path"],
+        "input_artifacts": invocation["input_artifacts"],
+        "observations": invocation["observations"],
+        "missing_evidence": invocation["missing_evidence"],
+        "errors": invocation["errors"],
+        "observed_at": invocation["observed_at"],
+        "sanitized": True,
+    }
+    try:
+        write_json_artifact(output_path, payload)
+    except ArtifactWriteError as exc:
+        updated = dict(invocation)
+        updated["status"] = "manual_review"
+        updated["output_artifact_path"] = None
+        updated["missing_evidence"] = list(dict.fromkeys([*updated.get("missing_evidence", []), "worker_output_artifact"]))
+        updated["errors"] = list(updated.get("errors", [])) + [redact_provider_text(f"worker_output_artifact_write_failed: {exc}")]
+        return updated
+    return invocation
+
+
 def run_worker_provider(
     provider: WorkerProviderConfig,
     *,
@@ -288,6 +320,9 @@ def run_worker_provider(
             input_artifacts=input_artifacts,
             output_path=provider.output_path,
         )
+        if invocation["status"] == "pass" and invocation["finding_status"] == "clear" and not invocation["boundary_violation"]:
+            if provider.output_path:
+                invocation = _persist_worker_output(invocation, provider.output_path)
         invocations.append(invocation)
         if invocation["status"] == "pass" and invocation["finding_status"] == "clear" and not invocation["boundary_violation"]:
             break
@@ -295,6 +330,6 @@ def run_worker_provider(
     worker_paths = []
     if packet_path != "in-memory":
         worker_paths.append(packet_path)
-    if provider.output_path:
-        worker_paths.append(provider.output_path)
+    produced_outputs = [str(item["output_artifact_path"]) for item in invocations if item.get("output_artifact_path")]
+    worker_paths.extend(list(dict.fromkeys(produced_outputs)))
     return invocations, worker_paths

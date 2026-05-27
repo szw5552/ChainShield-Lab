@@ -168,6 +168,7 @@ def _worker_sufficient(
         for item in invocations
         if item.get("status") == "pass" and item.get("finding_status") == "clear" and item.get("boundary_violation") is not True
     ]
+    # Worker providers are fallback attempts: one clear, boundary-safe summary is sufficient.
     if clear and not reasons:
         return True, []
     for item in invocations:

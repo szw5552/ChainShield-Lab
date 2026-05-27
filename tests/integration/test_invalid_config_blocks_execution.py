@@ -92,3 +92,29 @@ def test_invalid_config_unsafe_raw_output_falls_back_to_safe_report(tmp_path, mo
         assert json.loads(fallback_path.read_text(encoding="utf-8"))["decision"] == "manual_review"
     finally:
         fallback_path.unlink(missing_ok=True)
+
+
+def test_invalid_config_rotates_when_fallback_artifact_already_exists(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(cli, "run_scanners", lambda *a, **k: pytest.fail("scanner must not run"))
+    monkeypatch.setattr(cli, "run_sandbox", lambda *a, **k: pytest.fail("sandbox must not run"))
+    fallback_path = Path("reports/manual-review-invalid-config.json")
+    fallback_path.parent.mkdir(exist_ok=True)
+    fallback_path.write_text('{"existing": true}', encoding="utf-8")
+    unsafe_output = tmp_path / "outside-decision.json"
+    config_path = write_invalid_config(tmp_path, unsafe_output)
+
+    created_path = None
+    try:
+        exit_code = cli.main(["evaluate", "--config", str(config_path)])
+
+        assert exit_code == 2
+        printed = json.loads(capsys.readouterr().out)
+        created_path = Path(printed["artifacts"]["decision_json"])
+        assert created_path != fallback_path
+        assert created_path.exists()
+        assert json.loads(fallback_path.read_text(encoding="utf-8")) == {"existing": True}
+        assert any("artifact_path_rotated" in reason for reason in printed["primary_reasons"])
+    finally:
+        fallback_path.unlink(missing_ok=True)
+        if created_path:
+            created_path.unlink(missing_ok=True)

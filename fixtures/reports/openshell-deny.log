@@ -1,0 +1,2 @@
+{"event_type":"filesystem_read","blocked_path":"/sandbox/canary/canary-secret.txt","policy_rule_id":"fs.default_deny","result":"blocked","timestamp":"2026-05-27T00:00:00Z","artifact_path":"fixtures/reports/openshell-deny.log","source_kind":"fixture","sanitized":true}
+{"event_type":"network_egress","blocked_target":"https://chainshield-egress-test.invalid/collect","policy_rule_id":"net.default_deny","result":"blocked","timestamp":"2026-05-27T00:00:01Z","artifact_path":"fixtures/reports/openshell-deny.log","source_kind":"fixture","sanitized":true}

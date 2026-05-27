@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .evidence import gate_evidence, normalize_openshell_log, normalize_openshell_log_data
+from .schemas import REPO_ROOT
 
 LIVE_SANDBOX_TIMEOUT_SECONDS = 300
 MANUAL_SANDBOX_VERIFICATION_PATH = "specs/001-orbstack-sandbox-gates/quickstart.md#manual-sandbox-verification"
@@ -192,6 +193,25 @@ def run_live_sandbox_install(
             ],
             observed_at=ended_at,
         )
+    except (FileNotFoundError, OSError) as exc:
+        ended_at = _utc_now()
+        return gate_evidence(
+            gate="openshell",
+            status="manual_review",
+            run_id=run_id,
+            source_kind="live",
+            source_path=None,
+            command="openshell run --policy [policy] -- npm install --ignore-scripts=false",
+            exit_code=None,
+            risk_level="unknown",
+            reasons=[
+                f"process launch failed: {type(exc).__name__}",
+                f"readiness status={readiness.status}",
+                "containment evidence status=missing",
+                "host fallback prohibited",
+            ],
+            observed_at=ended_at,
+        )
 
     ended_at = _utc_now()
     raw_log = f"{getattr(completed, 'stdout', '')}\n{getattr(completed, 'stderr', '')}"
@@ -209,8 +229,17 @@ def run_live_sandbox_install(
     return evidence
 
 
+def _repo_path(path: str) -> str:
+    candidate = Path(path)
+    if candidate.is_absolute():
+        return str(candidate)
+    return str((REPO_ROOT / candidate).resolve(strict=False))
+
+
 def run_sandbox(config: Any, *, run_id: str, runner: Callable[..., Any] = subprocess.run) -> dict[str, Any] | None:
-    sandbox_mode = getattr(config, "sandbox_mode", config.raw.get("sandbox_mode", "disabled"))
+    sandbox_mode = getattr(config, "sandbox_mode", None)
+    if sandbox_mode is None:
+        sandbox_mode = getattr(config, "raw", {}).get("sandbox_mode", "disabled")
     fixtures = config.fixtures
     openshell_log = fixtures.get("openshell_log")
     if sandbox_mode == "disabled":
@@ -231,9 +260,9 @@ def run_sandbox(config: Any, *, run_id: str, runner: Callable[..., Any] = subpro
         readiness = check_sandbox_readiness(run_id=run_id, runner=runner, fixture_evidence_path=openshell_log)
         policy_path = fixtures.get("openshell_policy") or DEFAULT_OPENSHELL_POLICY
         return run_live_sandbox_install(
-            poc_app_path=fixtures["poc_app"],
-            policy_path=policy_path,
-            canary_path=fixtures.get("canary_secret") or "fixtures/canary/canary-secret.txt",
+            poc_app_path=_repo_path(fixtures["poc_app"]),
+            policy_path=_repo_path(policy_path),
+            canary_path=_repo_path(fixtures.get("canary_secret") or "fixtures/canary/canary-secret.txt"),
             run_id=run_id,
             readiness=readiness,
             runner=runner,

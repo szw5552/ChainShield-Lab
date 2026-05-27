@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from chainshield.artifacts import ArtifactWriteError, build_sanitized_failure_artifact, sanitize_text, write_json_artifact
+from chainshield.artifacts import redact_text
 
 
 @pytest.mark.parametrize(
@@ -39,3 +40,18 @@ def test_writer_refuses_to_save_raw_artifact(tmp_path):
         write_json_artifact(path, {"token": "NVIDIA_API_KEY=nvapi-secret-value"})
 
     assert not path.exists()
+
+
+def test_sanitizer_and_redactor_catch_json_style_tokens(tmp_path):
+    raw = '{"NVIDIA_API_KEY": "nvapi-secret-value", "token": "socket-secret-value"}'
+
+    result = sanitize_text(raw)
+    redacted = redact_text(raw)
+
+    assert result.safe is False
+    assert any("token/API key" in reason for reason in result.reasons)
+    assert "nvapi-secret-value" not in redacted
+    assert "socket-secret-value" not in redacted
+
+    with pytest.raises(ArtifactWriteError):
+        write_json_artifact(tmp_path / "unsafe.json", {"NVIDIA_API_KEY": "nvapi-secret-value"})

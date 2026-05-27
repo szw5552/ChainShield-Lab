@@ -14,9 +14,16 @@ def main(argv: list[str] | None = None) -> int:
 
     from chainshield.cli import main as chainshield_main
 
-    parser = argparse.ArgumentParser(prog="run-demo.py")
-    parser.add_argument("--config", required=True)
-    parser.add_argument("--sandbox-only", action="store_true")
+    parser = argparse.ArgumentParser(
+        prog="run-demo.py",
+        description="Run the ChainShield npm supply-chain defense demo with a sanitized config.",
+    )
+    parser.add_argument("--config", required=True, metavar="PATH", help="Path to a ChainShield demo config JSON file.")
+    parser.add_argument(
+        "--sandbox-only",
+        action="store_true",
+        help="Require configured sandbox evidence while preserving static gate safety checks.",
+    )
     args = parser.parse_args(argv)
 
     cli_args = ["evaluate", "--config", args.config]

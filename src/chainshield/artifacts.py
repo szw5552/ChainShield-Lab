@@ -21,7 +21,16 @@ class ArtifactWriteError(RuntimeError):
 
 
 SENSITIVE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"(Authorization:\s*Bearer\s+|API[_-]?KEY\s*=|TOKEN\s*=|NVIDIA_API_KEY\s*=|sk-[A-Za-z0-9_-]{8,})", re.I), "token/API key"),
+    (
+        re.compile(
+            r"(Authorization:\s*Bearer\s+\S+|"
+            r"['\"]?(?:NVIDIA_)?API[_-]?KEY['\"]?\s*[:=]\s*['\"]?[^\s,'\"]+|"
+            r"['\"]?TOKEN['\"]?\s*[:=]\s*['\"]?[^\s,'\"]+|"
+            r"\bsk-[A-Za-z0-9_-]{16,})",
+            re.I,
+        ),
+        "token/API key",
+    ),
     (re.compile(r"-----BEGIN (?:OPENSSH|RSA|EC|DSA)? ?PRIVATE KEY-----"), "SSH private key"),
     (re.compile(r"aws_access_key_id\s*=|aws_secret_access_key\s*=|\[profile [^\]]+\]", re.I), "cloud profile"),
     (re.compile(r"/(?:Users|home)/[^\s/]+/\.env\b|\.env\s+contains", re.I), "personal .env"),
@@ -40,9 +49,19 @@ def sanitize_text(text: str) -> SanitizeResult:
 
 def redact_text(text: str) -> str:
     redacted = re.sub(r"(Authorization:\s*Bearer\s+)\S+", r"\1[REDACTED]", text, flags=re.I)
-    redacted = re.sub(r"((?:NVIDIA_)?API[_-]?KEY\s*=)\S+", r"\1[REDACTED]", redacted, flags=re.I)
-    redacted = re.sub(r"(TOKEN\s*=)\S+", r"\1[REDACTED]", redacted, flags=re.I)
-    redacted = re.sub(r"sk-[A-Za-z0-9_-]{8,}", "[REDACTED]", redacted)
+    redacted = re.sub(
+        r"((?:['\"]?(?:NVIDIA_)?API[_-]?KEY['\"]?\s*[:=]\s*['\"]?))[^\s,'\"]+",
+        r"\1[REDACTED]",
+        redacted,
+        flags=re.I,
+    )
+    redacted = re.sub(
+        r"((?:['\"]?TOKEN['\"]?\s*[:=]\s*['\"]?))[^\s,'\"]+",
+        r"\1[REDACTED]",
+        redacted,
+        flags=re.I,
+    )
+    redacted = re.sub(r"\bsk-[A-Za-z0-9_-]{16,}", "[REDACTED]", redacted)
     return redacted
 
 

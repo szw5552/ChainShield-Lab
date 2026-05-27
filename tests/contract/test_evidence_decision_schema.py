@@ -45,6 +45,19 @@ def test_gate_evidence_schema_requires_sanitized_evidence():
     assert any("True was expected" in error.message for error in errors)
 
 
+def test_agent_invocation_schema_requires_finding_status_for_pass_only():
+    passing = dict(AGENT_INVOCATION, status="pass", finding_status="clear")
+    validate_contract("agent-invocation-evidence.schema.json", passing)
+
+    invalid_pass = dict(AGENT_INVOCATION, status="pass", finding_status=None)
+    errors = validate_contract("agent-invocation-evidence.schema.json", invalid_pass, raise_on_error=False)
+    assert errors
+
+    invalid_failed = dict(AGENT_INVOCATION, status="failed", finding_status="clear")
+    errors = validate_contract("agent-invocation-evidence.schema.json", invalid_failed, raise_on_error=False)
+    assert errors
+
+
 def test_supervisor_decision_schema_requires_traceable_fields_and_worker_metadata():
     decision = {
         "request_id": "REQ-foundation",

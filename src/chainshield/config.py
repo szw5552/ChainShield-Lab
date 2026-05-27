@@ -18,7 +18,7 @@ SYNTHETIC_EGRESS_TARGET = "https://chainshield-egress-test.invalid/collect"
 
 SENSITIVE_PATH_RE = re.compile(
     r"(^|/)(\.env($|\.)|\.npmrc$|id_rsa$|id_ed25519$|credentials\.json$|"
-    r"\.aws(/|$)|\.config/gcloud(/|$)|kubeconfig|.*auth.*|.*token.*|.*ssh.*)",
+    r"\.aws(/|$)|\.config/gcloud(/|$)|\.ssh(/|$)|kubeconfig$|\.?auth[^/]*$|\.?token[^/]*$|\.?ssh[^/]*$)",
     re.IGNORECASE,
 )
 
@@ -181,7 +181,10 @@ def validate_repo_local_path(field: str, value: str, *, repo_root: Path = REPO_R
         return [f"{field}: sensitive path pattern is not allowed"]
     full = root / candidate
     if full.exists() or full.is_symlink():
-        real = full.resolve(strict=True)
+        try:
+            real = full.resolve(strict=True)
+        except FileNotFoundError:
+            return [f"{field}: broken symlink is not allowed"]
         try:
             real.relative_to(root)
         except ValueError:

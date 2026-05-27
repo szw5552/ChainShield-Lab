@@ -55,7 +55,7 @@ Demo Config
 - OrbStack 不可用時，live sandbox demo 會停止並回報 `manual_review`；不得 fallback 到宿主機或未授權的一般 Docker runtime。
 - PoC fixture 只使用 synthetic canary secret 與 synthetic egress target，不使用真實秘密、SSH key、cloud profile 或個人 `.env`。
 - Snyk、Socket、NVIDIA API token 只能放在 shell environment 或工具自己的安全登入狀態中，不得寫入 config、report 或 git。
-- Runtime outputs 寫入 `/reports/`，且 artifact path 已存在時 CLI 會拒絕覆寫，請改用新的 output path。
+- Runtime outputs 寫入 `reports/`，且 artifact path 已存在時 CLI 會拒絕覆寫，請改用新的 output path。
 
 ## 環境需求
 
@@ -180,7 +180,7 @@ pytest tests/integration/test_decision_outputs.py
 ```text
 src/chainshield/                 # Supervisor CLI、evidence normalization、sandbox/worker adapters
 fixtures/configs/                # Demo configs for deny/allow/manual_review/sandbox/worker
-fixtures/reports/                # Sanitized Snyk/Socket/OpenShell fixture reports
+fixturesreports/                # Sanitized Snyk/Socket/OpenShell fixture reports
 fixtures/malicious-poc-pkg/      # PoC-only npm package; private and local-only
 fixtures/poc-app/                # npm app fixture and lockfile
 fixtures/canary/                 # Synthetic canary secrets for sandbox demo only

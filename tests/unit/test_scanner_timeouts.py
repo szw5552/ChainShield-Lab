@@ -56,6 +56,27 @@ def test_live_unavailable_falls_back_to_fixture_and_marks_evidence(monkeypatch):
     assert any("live_unavailable" in reason for reason in results[0]["reasons"])
 
 
+def test_live_snyk_empty_stdout_with_failure_requires_manual_review_and_fixture_fallback():
+    def runner(command, **kwargs):
+        return subprocess.CompletedProcess(command, 2, stdout="", stderr="Authentication failed")
+
+    live = scanners.run_live_scanner("snyk", run_id="run-snyk-empty", runner=runner)
+
+    assert live["status"] == "manual_review"
+    assert live["exit_code"] == 2
+    assert any("live_unavailable" in reason for reason in live["reasons"])
+
+    results = scanners.run_scanners(
+        scanner_mode={"snyk": "live", "socket": "skip"},
+        fixtures={"snyk_report": "fixtures/reports/snyk-pass.json", "socket_report": None},
+        run_id="run-snyk-empty",
+        runner=runner,
+    )
+
+    assert results[0]["status"] == "pass"
+    assert any("live_unavailable fallback used fixture evidence" in reason for reason in results[0]["reasons"])
+
+
 def test_live_scanner_runs_in_configured_poc_app_directory():
     calls = {}
 

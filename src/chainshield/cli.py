@@ -10,17 +10,20 @@ from typing import Any
 
 from .artifacts import ArtifactWriteError, atomic_write_text, render_markdown_summary, sanitize_text, write_json_artifact
 from .config import ConfigValidationError, DemoConfig, build_run_id, validate_output_path
+from .evidence import gate_evidence
 from .schemas import REPO_ROOT
 from .sandbox import run_sandbox
 from .scanners import run_scanners
 from .supervisor import SupervisorDecision, decide_static_gates
 from .worker_provider import run_worker_provider
 
+EXIT_CODES = {"allow": 0, "deny": 1, "manual_review": 2}
+
 
 def _safe_outputs_from_raw_config(path: Path) -> dict[str, str | None]:
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
         return {"decision_json": "reports/manual-review-invalid-config.json", "markdown_summary": None}
     outputs = raw.get("outputs") if isinstance(raw, dict) else None
     if not isinstance(outputs, dict):
@@ -58,6 +61,31 @@ def _manual_review_for_invalid_config(config_path: Path, errors: list[str]) -> d
         },
     )
     return decision.to_dict()
+
+
+def _unique_artifact_path(path: Path) -> Path:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
+    candidate = path.with_name(f"{path.stem}-{timestamp}{path.suffix}")
+    counter = 1
+    while candidate.exists():
+        candidate = path.with_name(f"{path.stem}-{timestamp}-{counter}{path.suffix}")
+        counter += 1
+    return candidate
+
+
+def _write_invalid_config_decision(decision: dict[str, Any]) -> None:
+    output_path = Path(decision["artifacts"]["decision_json"])
+    if output_path.exists():
+        replacement = _unique_artifact_path(output_path)
+        decision["primary_reasons"].append(
+            f"artifact_path_rotated: requested invalid-config decision artifact already exists; wrote {replacement}"
+        )
+        decision["artifacts"]["decision_json"] = str(replacement)
+        output_path = replacement
+    try:
+        write_json_artifact(output_path, decision)
+    except ArtifactWriteError as exc:
+        decision["primary_reasons"].append(f"artifact_skipped: invalid-config decision artifact was not written: {exc}")
 
 
 def _evidence_hash(config: DemoConfig) -> str:
@@ -119,18 +147,28 @@ def _manual_review_for_sandbox(static_decision: SupervisorDecision, sandbox_evid
     )
 
 
+def _sandbox_only_missing_evidence(*, run_id: str) -> dict[str, Any]:
+    return gate_evidence(
+        gate="openshell",
+        status="manual_review",
+        run_id=run_id,
+        source_kind="manual_observation",
+        source_path=None,
+        command=None,
+        exit_code=None,
+        risk_level="unknown",
+        reasons=["--sandbox-only requires sandbox_mode to be fixture or live."],
+    )
+
+
 def evaluate(args: argparse.Namespace) -> int:
+    sandbox_only = bool(getattr(args, "sandbox_only", False))
     config_path = Path(args.config)
     try:
         config = DemoConfig.load(config_path)
     except ConfigValidationError as exc:
         decision = _manual_review_for_invalid_config(config_path, exc.errors)
-        output_path = Path(decision["artifacts"]["decision_json"])
-        if not output_path.exists():
-            try:
-                write_json_artifact(output_path, decision)
-            except ArtifactWriteError:
-                pass
+        _write_invalid_config_decision(decision)
         print(json.dumps(decision, ensure_ascii=False))
         return 2
 
@@ -156,7 +194,11 @@ def evaluate(args: argparse.Namespace) -> int:
 
     sandbox_evidence = None
     combined_results = list(scanner_results)
-    if _sandbox_requested(config) and _can_enter_sandbox(static_decision, config):
+    if sandbox_only and not _sandbox_requested(config) and static_decision.decision != "deny":
+        sandbox_evidence = _sandbox_only_missing_evidence(run_id=run_id)
+        combined_results = [*scanner_results, sandbox_evidence]
+        decision = _manual_review_for_sandbox(static_decision, sandbox_evidence).to_dict()
+    elif _sandbox_requested(config) and _can_enter_sandbox(static_decision, config):
         sandbox_evidence = run_sandbox(config, run_id=run_id)
         if sandbox_evidence and sandbox_evidence.get("source_path"):
             artifacts["logs"].append(str(sandbox_evidence["source_path"]))
@@ -197,7 +239,7 @@ def evaluate(args: argparse.Namespace) -> int:
         ).to_dict()
     _write_decision_artifacts(decision)
     print(json.dumps(decision, ensure_ascii=False))
-    return {"allow": 0, "deny": 1, "manual_review": 2}[decision["decision"]]
+    return EXIT_CODES[decision["decision"]]
 
 
 def build_parser() -> argparse.ArgumentParser:

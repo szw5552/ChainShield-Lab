@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
+from chainshield import sandbox
+from chainshield.schemas import REPO_ROOT
 from chainshield.sandbox import (
     SandboxReadiness,
     build_sandbox_env,
@@ -152,3 +155,63 @@ def test_live_sandbox_passes_safe_env_to_runner():
 
     assert "PATH" in calls["env"]
     assert calls["env"]["CHAINSHIELD_CANARY_PATH"] == "fixtures/canary/canary-secret.txt"
+
+
+def test_live_sandbox_launch_failure_records_manual_review_without_crash():
+    readiness = SandboxReadiness(status="pass", runtime="OrbStack", openshell_available=True)
+
+    def failing_runner(command, **kwargs):
+        raise OSError("cannot launch")
+
+    evidence = run_live_sandbox_install(
+        poc_app_path="fixtures/poc-app",
+        policy_path="policies/openshell-npm-install.yaml",
+        canary_path="fixtures/canary/canary-secret.txt",
+        run_id="run-sandbox-launch-failure",
+        readiness=readiness,
+        runner=failing_runner,
+    )
+
+    assert evidence["status"] == "manual_review"
+    joined = " ".join(evidence["reasons"])
+    assert "process launch failed" in joined
+    assert "host fallback prohibited" in joined
+
+
+def test_live_sandbox_resolves_policy_and_canary_paths_against_repo_root():
+    calls = {}
+
+    def runner(command, **kwargs):
+        if command[:2] == ["docker", "info"]:
+            return Completed(stdout="OrbStack")
+        if command[:2] == ["openshell", "--version"]:
+            return Completed(stdout="OpenShell 0.1")
+        calls["command"] = command
+        calls["cwd"] = kwargs["cwd"]
+        calls["env"] = kwargs["env"]
+        return Completed(
+            stdout="\n".join(
+                [
+                    '{"event_type":"filesystem_read","blocked_path":"/sandbox/canary/canary-secret.txt","policy_rule_id":"fs.default_deny","result":"blocked","timestamp":"2026-05-27T00:00:00Z","source_kind":"live","sanitized":true}',
+                    '{"event_type":"network_egress","blocked_target":"https://chainshield-egress-test.invalid/collect","policy_rule_id":"net.default_deny","result":"blocked","timestamp":"2026-05-27T00:00:01Z","source_kind":"live","sanitized":true}',
+                ]
+            )
+        )
+
+    config = SimpleNamespace(
+        raw={"sandbox_mode": "live"},
+        sandbox_mode="live",
+        fixtures={
+            "poc_app": "fixtures/poc-app",
+            "openshell_policy": "policies/openshell-npm-install.yaml",
+            "canary_secret": "fixtures/canary/canary-secret.txt",
+            "openshell_log": "fixtures/reports/openshell-deny.log",
+        },
+    )
+
+    evidence = sandbox.run_sandbox(config, run_id="run-sandbox-paths", runner=runner)
+
+    assert evidence["status"] == "pass"
+    assert calls["command"][3] == str((REPO_ROOT / "policies/openshell-npm-install.yaml").resolve(strict=False))
+    assert calls["cwd"] == str((REPO_ROOT / "fixtures/poc-app").resolve(strict=False))
+    assert calls["env"]["CHAINSHIELD_CANARY_PATH"] == str((REPO_ROOT / "fixtures/canary/canary-secret.txt").resolve(strict=False))

@@ -12,7 +12,6 @@ from .evidence import (
     normalize_snyk_report_data,
     normalize_socket_report,
     normalize_socket_report_data,
-    socket_evidence_from_classification,
 )
 
 LIVE_TIMEOUT_SECONDS = 120
@@ -116,7 +115,18 @@ def run_live_scanner(
             reasons=[f"{classification}: live scanner output was not usable JSON; started_at={started_at}; ended_at={ended_at}"],
         )
 
-    if gate == "snyk":
+    if completed.returncode not in (0, None) and not data:
+        classification = _classify_unavailable(stderr, completed.returncode)
+        evidence = manual_review_evidence(
+            gate=gate,
+            run_id=run_id,
+            source_kind="live",
+            source_path=None,
+            command=summary,
+            exit_code=completed.returncode,
+            reasons=[f"live_unavailable: {classification}; live scanner did not provide usable JSON data"],
+        )
+    elif gate == "snyk":
         evidence = normalize_snyk_report_data(
             data,
             source_path=None,
@@ -127,23 +137,15 @@ def run_live_scanner(
             observed_at=ended_at,
         )
     else:
-        if completed.returncode not in (0, None) and not data:
-            evidence = socket_evidence_from_classification(
-                _classify_unavailable(stderr, completed.returncode),
-                exit_code=completed.returncode,
-                command=summary,
-                run_id=run_id,
-            )
-        else:
-            evidence = normalize_socket_report_data(
-                data,
-                source_path=None,
-                run_id=run_id,
-                source_kind="live",
-                command=summary,
-                exit_code=completed.returncode,
-                observed_at=ended_at,
-            )
+        evidence = normalize_socket_report_data(
+            data,
+            source_path=None,
+            run_id=run_id,
+            source_kind="live",
+            command=summary,
+            exit_code=completed.returncode,
+            observed_at=ended_at,
+        )
     evidence["reasons"].append(f"live scanner timing: started_at={started_at}; ended_at={ended_at}")
     return evidence
 

@@ -25,6 +25,7 @@ yarn-error.log*
 *.tar
 *.tar.gz
 *.log
+!fixtures/reports/*.log
 
 # Local auth, tokens, and secrets
 .env*
