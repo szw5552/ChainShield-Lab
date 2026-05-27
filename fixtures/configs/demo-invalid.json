@@ -1,0 +1,60 @@
+{
+  "description": "Phase 2 intentionally invalid demo config fixture. This file collects unsafe examples for contract and CLI manual_review tests; it must never be used to run scanners or sandbox installs.",
+  "invalid_cases": [
+    {
+      "name": "format_error",
+      "example": "not a valid ChainShield Demo Config because required fields are absent"
+    },
+    {
+      "name": "unsafe_sandbox_setting",
+      "sandbox_mode": "host"
+    },
+    {
+      "name": "invalid_sandbox_demo_override",
+      "safety": {
+        "sandbox_demo_override": {
+          "enabled": true,
+          "reason": "short"
+        }
+      }
+    },
+    {
+      "name": "parent_traversal_path",
+      "fixtures": {
+        "snyk_report": "../outside/snyk.json"
+      }
+    },
+    {
+      "name": "home_expansion_path",
+      "fixtures": {
+        "socket_report": "~/socket.json"
+      }
+    },
+    {
+      "name": "repository_external_path",
+      "outputs": {
+        "decision_json": "/tmp/chainshield-decision.json"
+      }
+    },
+    {
+      "name": "sensitive_filename",
+      "fixtures": {
+        "snyk_report": "fixtures/configs/.npmrc"
+      }
+    },
+    {
+      "name": "auth_token_ssh_cloud_profile_path_patterns",
+      "fixtures": {
+        "snyk_report": "fixtures/configs/auth-token.json",
+        "socket_report": "fixtures/configs/.aws/credentials",
+        "openshell_log": "fixtures/configs/.ssh/id_rsa"
+      }
+    },
+    {
+      "name": "symlink_escape_path",
+      "fixtures": {
+        "snyk_report": "fixtures/configs/symlink-escape.json"
+      }
+    }
+  ]
+}

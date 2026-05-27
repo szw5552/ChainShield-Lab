@@ -1,0 +1,9 @@
+{
+  "healthy": false,
+  "issues": [
+    {
+      "type": "unhealthy",
+      "title": "Dependency health is below demo policy threshold"
+    }
+  ]
+}

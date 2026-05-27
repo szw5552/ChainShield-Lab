@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "request_id": "REQ-demo-live-sandbox",
+  "package_manager": "npm",
+  "scanner_mode": {
+    "snyk": "fixture",
+    "socket": "fixture"
+  },
+  "sandbox_mode": "live",
+  "fixtures": {
+    "poc_app": "fixtures/poc-app",
+    "malicious_package": "fixtures/malicious-poc-pkg",
+    "snyk_report": "fixtures/reports/snyk-high-critical.json",
+    "socket_report": "fixtures/reports/socket-unhealthy.json",
+    "openshell_log": "fixtures/reports/openshell-deny.log",
+    "canary_secret": "fixtures/canary/canary-secret.txt",
+    "openshell_policy": "policies/openshell-npm-install.yaml"
+  },
+  "outputs": {
+    "decision_json": "reports/demo-live-sandbox-decision.json",
+    "markdown_summary": "reports/demo-live-sandbox-summary.md"
+  },
+  "safety": {
+    "synthetic_egress_target": "https://chainshield-egress-test.invalid/collect",
+    "sandbox_demo_override": {
+      "enabled": true,
+      "reason": "Run the third-layer sandbox containment demo after static deny for evidence only."
+    }
+  }
+}

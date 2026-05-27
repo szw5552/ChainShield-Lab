@@ -1,0 +1,17 @@
+{
+  "ok": false,
+  "vulnerabilities": [
+    {
+      "id": "SNYK-DEMO-LOW-0001",
+      "packageName": "left-pad-demo",
+      "severity": "low",
+      "title": "Low severity demo advisory"
+    },
+    {
+      "id": "SNYK-DEMO-MEDIUM-0002",
+      "packageName": "qs-demo",
+      "severity": "medium",
+      "title": "Medium severity demo advisory"
+    }
+  ]
+}

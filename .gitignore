@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+
+# Node/npm fixtures and local installs
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ChainShield runtime outputs (do not ignore fixtures/reports/)
+/reports/
+/scanner-output/
+/sandbox-logs/
+/tmp/
+*.tgz
+*.tar
+*.tar.gz
+*.log
+!fixtures/reports/*.log
+
+# Local auth, tokens, and secrets
+.env*
+.npmrc
+.snyk-token*
+.socket*token*
+*.token
+*.secret
+credentials.json
+.aws/
+.config/gcloud/
+id_rsa
+id_ed25519
+*.key
+*.pem
+
+# OS/editor
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.vscode/
+.idea/

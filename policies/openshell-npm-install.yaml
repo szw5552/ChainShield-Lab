@@ -1,0 +1,22 @@
+# ChainShield PoC-only OpenShell policy template for sandboxed npm install.
+# Verify CLI/schema against the local OpenShell/NemoClaw version before live use.
+version: 1
+filesystem_policy:
+  include_workdir: false
+  read_only:
+    - /tmp/chainshield-bundle/chainshield-fixtures/poc-app
+    - /tmp/chainshield-bundle/chainshield-fixtures/malicious-poc-pkg
+  read_write:
+    - /tmp/chainshield-npm-cache
+landlock:
+  compatibility: best_effort
+process:
+  run_as_user: sandbox
+  run_as_group: sandbox
+network_policies:
+  chainshield_default_deny:
+    name: chainshield-default-deny
+    endpoints: []
+    binaries:
+      - { path: /usr/bin/npm }
+      - { path: /usr/bin/node }

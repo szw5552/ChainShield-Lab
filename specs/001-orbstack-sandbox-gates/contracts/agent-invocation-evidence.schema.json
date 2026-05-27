@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chainshield-lab.local/contracts/agent-invocation-evidence.schema.json",
+  "title": "ChainShield Agent Invocation Evidence",
+  "description": "Nemotron/Codex/Claude Worker provider 的 sanitized invocation evidence；不得包含 API key、token 或未清理 prompt/log。",
+  "type": "object",
+  "required": [
+    "provider",
+    "model",
+    "status",
+    "request_id",
+    "run_id",
+    "finding_status",
+    "boundary_violation",
+    "boundary_violation_reasons",
+    "task_packet_path",
+    "input_artifacts",
+    "output_artifact_path",
+    "observations",
+    "missing_evidence",
+    "errors",
+    "observed_at",
+    "sanitized"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "provider": {
+      "type": "string",
+      "enum": [
+        "nemotron_api",
+        "codex_subagent",
+        "claude_subagent"
+      ]
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "manual_review",
+        "failed",
+        "skipped"
+      ]
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task_packet_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "input_artifacts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "output_artifact_path": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "observations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "missing_evidence": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "observed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sanitized": {
+      "type": "boolean",
+      "const": true
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "finding_status": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "clear",
+        "concern",
+        "inconclusive",
+        null
+      ],
+      "description": "Required as clear/concern/inconclusive when status=pass; null for failed/skipped provider attempts."
+    },
+    "boundary_violation": {
+      "type": "boolean",
+      "description": "True when Worker output asks for shell/scanner/sandbox/host lifecycle execution or unauthorized tool invocation."
+    },
+    "boundary_violation_reasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "pass"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "finding_status": {
+            "enum": [
+              "clear",
+              "concern",
+              "inconclusive"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "failed",
+              "skipped"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "finding_status": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "name": "chainshield-poc-app",
+  "version": "0.0.0-poc",
+  "private": true,
+  "description": "Local npm app fixture for ChainShield static gate tests.",
+  "dependencies": {
+    "malicious-poc-pkg": "file:../malicious-poc-pkg"
+  }
+}

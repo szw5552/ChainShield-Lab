@@ -1,0 +1,11 @@
+{
+  "healthy": true,
+  "policy": {
+    "violations": [
+      {
+        "name": "Install scripts require review",
+        "severity": "high"
+      }
+    ]
+  }
+}

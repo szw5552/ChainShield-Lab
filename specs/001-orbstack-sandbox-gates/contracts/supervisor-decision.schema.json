@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chainshield-lab.local/contracts/supervisor-decision.schema.json",
+  "title": "ChainShield Supervisor Decision",
+  "description": "Supervisor 彙整 Gate 證據後產生的機器可讀決策檔。",
+  "type": "object",
+  "required": [
+    "request_id",
+    "run_id",
+    "decision",
+    "summary",
+    "primary_reasons",
+    "gate_results",
+    "agent_invocations",
+    "missing_gates",
+    "next_actions",
+    "generated_at",
+    "worker_provider",
+    "artifacts"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "allow",
+        "deny",
+        "manual_review"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "primary_reasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "gate_results": {
+      "type": "array",
+      "items": {
+        "$ref": "gate-evidence.schema.json"
+      }
+    },
+    "missing_gates": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "snyk",
+          "socket",
+          "openshell",
+          "worker_provider"
+        ]
+      }
+    },
+    "next_actions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "artifacts": {
+      "type": "object",
+      "required": [
+        "decision_json",
+        "markdown_summary",
+        "reports",
+        "logs",
+        "worker"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "decision_json": {
+          "type": "string",
+          "minLength": 1
+        },
+        "markdown_summary": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reports": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "logs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "worker": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "agent_invocations": {
+      "type": "array",
+      "items": {
+        "$ref": "agent-invocation-evidence.schema.json"
+      }
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Repository-local run_id derived from demo config path, fixture identity, timestamp, and evidence hash."
+    },
+    "worker_provider": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "provider_chain",
+        "fallback_order_after_primary_failure",
+        "timeout_seconds",
+        "output_path"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "provider_chain": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "const": "nemotron_api"
+            },
+            {
+              "const": "codex_subagent"
+            },
+            {
+              "const": "claude_subagent"
+            },
+            {
+              "const": "manual_review"
+            }
+          ],
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "fallback_order_after_primary_failure": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "const": "codex_subagent"
+            },
+            {
+              "const": "claude_subagent"
+            },
+            {
+              "const": "manual_review"
+            }
+          ],
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 300,
+          "default": 60
+        },
+        "output_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}
