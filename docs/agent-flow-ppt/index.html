@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="zh-Hant">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ChainShield Lab Agent Flow PPT</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+  <canvas id="motion-canvas" aria-hidden="true"></canvas>
+
+  <header class="topbar" aria-label="Presentation progress">
+    <a class="brand" href="#slide-hero" aria-label="ChainShield Lab">
+      <div class="nvidia-badge" aria-label="NVIDIA Hackathon">
+        <img src="https://upload.wikimedia.org/wikipedia/sco/2/21/Nvidia_logo.svg" alt="NVIDIA" />
+      </div>
+      <span>ChainShield Lab</span>
+    </a>
+    <nav class="progress-dots" aria-label="Slides">
+      <button class="dot is-active" type="button" data-goto="0" aria-label="Go to slide 1"></button>
+      <button class="dot" type="button" data-goto="1" aria-label="Go to slide 2"></button>
+      <button class="dot" type="button" data-goto="2" aria-label="Go to slide 3"></button>
+      <button class="dot" type="button" data-goto="3" aria-label="Go to slide 4"></button>
+      <button class="dot" type="button" data-goto="4" aria-label="Go to slide 5"></button>
+      <button class="dot" type="button" data-goto="5" aria-label="Go to slide 6"></button>
+      <button class="dot" type="button" data-goto="6" aria-label="Go to slide 7"></button>
+    </nav>
+    <div class="slide-counter"><span data-current>01</span><span>/</span><span>07</span></div>
+  </header>
+
+  <main class="deck" aria-live="polite">
+    <section class="slide hero-slide is-active" id="slide-hero" data-slide>
+      <div class="hero-grid">
+        <div class="hero-copy">
+          <p class="kicker">NVIDIA Hackathon Demo</p>
+          <h1>AI-assisted npm supply-chain defense agent</h1>
+          <p class="lead">
+            ChainShield Lab 的目的，是保護使用者在下載與安裝 npm 套件時，不被惡意套件的漏洞、
+            可疑供應鏈行為或 postinstall 攻擊傷害。它會先收集 evidence，通過 Snyk、Socket、
+            OpenShell 三道 gate，再由 Supervisor Decision 產出可追蹤的結果：可以安全繼續
+            (`allow`)、必須阻擋安裝 (`deny`)，或證據不足需要人工複查 (`manual_review`)。
+          </p>
+          <div class="hero-actions" aria-label="Key demo promises">
+            <span class="pill">evidence first</span>
+            <span class="pill">deterministic rules</span>
+            <span class="pill"><strong class="nemoclaw-icon" style="margin-right:10px">NemoClaw</strong>/ OpenShell
+              containment</span>
+          </div>
+        </div>
+        <div class="hero-visual" aria-label="Agent flow preview">
+          <div class="hero-flow-panel">
+            <div class="evidence-rail" aria-hidden="true">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+            <article class="hero-step">
+              <span class="step-num">01</span>
+              <div>
+                <h3>Demo Config</h3>
+                <p>先確認要評估哪個 npm app、報告來源與安全輸出路徑。</p>
+              </div>
+            </article>
+            <div class="hero-arrow">設定安全有效</div>
+            <article class="hero-step">
+              <span class="step-num">02</span>
+              <div>
+                <h3>Snyk Gate</h3>
+                <p>查已知 high / critical vulnerability。</p>
+              </div>
+            </article>
+            <div class="hero-arrow">沒有已知重大漏洞</div>
+            <article class="hero-step">
+              <span class="step-num">03</span>
+              <div>
+                <h3>Socket Gate</h3>
+                <p>查 policy、malware risk、supply-chain risk。</p>
+              </div>
+            </article>
+            <div class="hero-arrow">需要 sandbox 展示</div>
+            <article class="hero-step">
+              <span class="step-num">04</span>
+              <div>
+                <h3 class="title-with-icon">
+                  <span class="nemoclaw-icon" aria-label="NemoClaw icon">
+                    NemoClaw
+                  </span>
+                  <span>OpenShell Gate</span>
+                </h3>
+                <p>確認讀檔與外連都被 sandbox 擋下。</p>
+              </div>
+            </article>
+            <div class="hero-arrow final">固定規則裁決</div>
+            <article class="hero-step decision-step">
+              <span class="step-num">05</span>
+              <div>
+                <h3>Supervisor Decision</h3>
+                <p>輸出可以繼續、必須阻擋、或人工複查。</p>
+              </div>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-risk" data-slide>
+      <div class="slide-header">
+        <p class="kicker">Problem</p>
+        <h2>npm install 的風險發生在你還沒反應過來之前</h2>
+        <p>
+          惡意套件可能在 `postinstall` 階段讀 synthetic canary 或嘗試 network egress。
+          ChainShield 的目標是先判斷，再把必要展示限制在 sandbox containment 裡。
+        </p>
+      </div>
+      <div class="risk-layout">
+        <article class="terminal-panel">
+          <div class="terminal-title">fixtures/malicious-poc-pkg/postinstall.js</div>
+          <pre><code>read synthetic canary
+attempt synthetic egress target
+Do not run npm install on host</code></pre>
+        </article>
+        <div class="callout-stack">
+          <div class="callout warn">
+            <strong>不碰真實秘密</strong>
+            <span>PoC 只使用 synthetic canary secret 與 reserved invalid egress target。</span>
+          </div>
+          <div class="callout ok">
+            <strong>不在 host 直接執行</strong>
+            <span>live install-time demo 必須走 OrbStack/OpenShell sandbox path。</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-flow" data-slide>
+      <div class="slide-header">
+        <p class="kicker">Agent Flow</p>
+        <h2>節點與節點之間，每一步都有條件</h2>
+        <p>流程不是把 LLM 放在最後做判斷，而是把 reports/logs 正規化成 gate evidence，再交給 deterministic Supervisor。</p>
+      </div>
+      <div class="flow-map" aria-label="ChainShield Agent Flow">
+        <article class="flow-node input">
+          <span class="node-type">Input</span>
+          <h3>Demo Config</h3>
+          <p>指定 npm app、fixture reports、sandbox mode、output paths。</p>
+          <small>條件：路徑安全、不可覆寫舊報告、不可指向 token/SSH/home。</small>
+        </article>
+        <div class="connector"><span>config valid：設定安全有效</span></div>
+        <article class="flow-node gate">
+          <span class="node-type">Gate 1</span>
+          <h3>Snyk Gate</h3>
+          <p>查 dependency tree 是否有 high / critical vulnerability。</p>
+          <small>deny：重大 CVE 或已知高風險 vulnerability。</small>
+        </article>
+        <div class="connector"><span>no static deny：前面沒有明確拒絕</span></div>
+        <article class="flow-node gate">
+          <span class="node-type">Gate 2</span>
+          <h3>Socket Gate</h3>
+          <p>查 package health、policy violation、malware risk、supply-chain risk。</p>
+          <small>deny：policy 或供應鏈風險命中。</small>
+        </article>
+        <div class="connector"><span>sandbox requested：需要沙箱展示</span></div>
+        <article class="flow-node gate">
+          <span class="node-type">Gate 3</span>
+          <h3 class="title-with-icon">
+            <span class="nemoclaw-icon" aria-label="NemoClaw icon">
+              NemoClaw
+            </span>
+            <span>OpenShell Gate</span>
+          </h3>
+          <p>透過 <strong>NemoClaw</strong> / OpenShell 檢查 install-time containment evidence。</p>
+          <small>pass：filesystem read block + network egress block 都存在。</small>
+        </article>
+        <div class="connector"><span>summarize only：AI 只做摘要</span></div>
+        <article class="flow-node worker">
+          <span class="node-type">Optional</span>
+          <h3>AI Worker Summary</h3>
+          <p><strong>Nemotron</strong> / Codex / Claude 讀 sanitized evidence，產出摘要。</p>
+          <small>不能直接裁決 allow / deny。</small>
+        </article>
+        <div class="connector"><span>rules decide：規則做裁決</span></div>
+        <article class="flow-node decision">
+          <span class="node-type">Decision</span>
+          <h3>Supervisor Decision</h3>
+          <p>依 deterministic rules 產生 allow、deny、manual_review。</p>
+          <small>輸出 decision JSON + Markdown summary。</small>
+        </article>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-gates" data-slide>
+      <div class="slide-header compact">
+        <p class="kicker">Gate Conditions</p>
+        <h2>三道 gate 的判斷條件要讓評審一眼看懂</h2>
+      </div>
+      <div class="gate-grid">
+        <article class="gate-card snyk">
+          <div class="gate-card-head">
+            <span>Snyk Gate</span>
+            <strong>已知漏洞</strong>
+          </div>
+          <ul>
+            <li><b>必須阻擋</b>：發現高風險或重大已知漏洞（high / critical vulnerability）。</li>
+            <li><b>可以通過</b>：沒有高風險或重大漏洞；低中風險會列入提醒，不直接阻擋。</li>
+            <li><b>人工複查</b>：Snyk 報告缺失、格式壞掉，或 live scanner timeout。</li>
+          </ul>
+        </article>
+        <article class="gate-card socket">
+          <div class="gate-card-head">
+            <span>Socket Gate</span>
+            <strong>供應鏈風險</strong>
+          </div>
+          <ul>
+            <li><b>必須阻擋</b>：命中組織政策違規、惡意程式風險或供應鏈風險。</li>
+            <li><b>必須阻擋</b>：套件健康狀態不佳，或出現可疑安裝行為。</li>
+            <li><b>人工複查</b>：Socket 輸出無法解析，或 policy 狀態不明。</li>
+          </ul>
+        </article>
+        <article class="gate-card openshell">
+          <div class="gate-card-head">
+            <span>OpenShell Gate</span>
+            <strong>安裝期 containment</strong>
+          </div>
+          <ul>
+            <li><b>可以通過</b>：有證據顯示敏感資料讀取已被擋下（filesystem read block）。</li>
+            <li><b>可以通過</b>：有證據顯示不明 API 外連已被擋下（network egress block）。</li>
+            <li><b>人工複查</b>：任一阻擋紀錄缺失，或 evidence 尚未清理敏感資訊。</li>
+          </ul>
+        </article>
+      </div>
+      <div class="decision-strip">
+        <span class="state deny">deny</span>
+        <span>任何 static gate deny 會直接阻止 host install。</span>
+        <span class="state review">manual_review</span>
+        <span>證據缺失、不一致或 Worker concern。</span>
+        <span class="state allow">allow</span>
+        <span>必要 gate pass 且 evidence 足夠。</span>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-sandbox" data-slide>
+      <div class="split-layout">
+        <div>
+          <p class="kicker">Sandbox Containment</p>
+          <div class="title-lockup">
+            <h2 class="balanced-title">就算壞東西動起來，也只能在受控環境留下證據</h2>
+          </div>
+          <p>
+            <span class="nemoclaw-icon large" aria-label="NemoClaw icon">
+              NemoClaw
+            </span> / OpenShell Gate 是第三層示範：它不把 static deny 改成 allow，
+            只證明 sandbox policy 能阻擋「模擬敏感資料讀取風險」（synthetic canary），
+            以及「不明 API 外連請求」（synthetic network egress）。
+          </p>
+        </div>
+        <div class="containment-board" aria-label="OpenShell evidence requirements">
+          <div class="containment-event">
+            <span class="event-index">01</span>
+            <h3>阻擋敏感資料讀取</h3>
+            <p>惡意安裝腳本嘗試讀取模擬敏感資料時，<strong>NemoClaw</strong> / OpenShell sandbox 必須留下「已阻擋」紀錄（filesystem read block）。</p>
+          </div>
+          <div class="containment-event">
+            <span class="event-index">02</span>
+            <h3>阻擋不明 API 外連</h3>
+            <p>惡意安裝腳本嘗試把資料送到外部 API 時，default-deny policy 必須擋下連線（network egress block）。</p>
+          </div>
+          <div class="containment-event">
+            <span class="event-index">03</span>
+            <h3>只保留已清理證據</h3>
+            <p>輸出 log 只保留事件類型、觸發規則、時間與報告位置，不保存真實秘密或敏感路徑（sanitized evidence）。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-worker" data-slide>
+      <div class="slide-header">
+        <p class="kicker">AI Worker Boundary</p>
+        <h2>AI 負責整理證據，不負責安全裁決</h2>
+        <p>
+          <strong>Nemotron</strong> / Codex / Claude Worker 只能讀 sanitized evidence packet，產生 reviewer-friendly summary。
+          最終可以安全繼續、必須阻擋安裝、或需要人工複查，仍由「Supervisor：固定規則裁決」這個環節決定。
+        </p>
+      </div>
+      <div class="worker-lanes">
+        <article class="worker-lane">
+          <span class="lane-label">Input</span>
+          <h3>worker-task-packet.json</h3>
+          <p>給 AI Worker 的整理任務單：只列出要看的報告位置、檢查重點與這次任務資訊，不包含秘密，也不要求執行命令。</p>
+        </article>
+        <article class="worker-lane">
+          <span class="lane-label">Allowed</span>
+          <h3>安全整理後的證據摘要</h3>
+          <p>AI 只能回報三種摘要狀態：clear 代表沒有補充疑慮，concern 代表看到疑點，inconclusive 代表證據不足無法整理出明確結論。</p>
+        </article>
+        <article class="worker-lane blocked">
+          <span class="lane-label">Blocked</span>
+          <h3>AI 不能自己決定放行或阻擋</h3>
+          <p>AI 也不能要求系統去跑 shell、scanner、sandbox，或觸發 npm 安裝流程；它只負責整理已經清理過的證據。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-outputs" data-slide>
+      <div class="slide-header">
+        <p class="kicker">Final Outputs</p>
+        <h2>可追溯的判斷依據及成果</h2>
+        <p>Supervisor Decision 會把 gate evidence、agent invocation evidence、reasons 和 next actions 固定成可追蹤
+          artifact，讓評審直接從輸出理解每個裁決。</p>
+      </div>
+      <div class="output-grid">
+        <article class="artifact-card">
+          <h3>decision JSON</h3>
+          <pre><code>{
+  "decision": "deny",
+  "primary_reasons": [...],
+  "gate_results": [...],
+  "agent_invocations": [...]
+}</code></pre>
+        </article>
+        <article class="artifact-card">
+          <h3>Markdown summary</h3>
+          <p>30 秒內可讀：結果、primary reasons、missing gates、next actions、reports/logs refs。</p>
+        </article>
+        <article class="artifact-card">
+          <h3>Decision states</h3>
+          <div class="state-row">
+            <span class="state allow">allow</span>
+            <span class="state deny">deny</span>
+            <span class="state review">manual_review</span>
+          </div>
+          <p>每個結果都必須能回追到 Snyk、Socket、OpenShell 或 Worker evidence。</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <div class="controls" aria-label="Slide controls">
+    <button class="control-button" type="button" data-action="prev" aria-label="Previous slide">‹</button>
+    <button class="control-button next" type="button" data-action="next" aria-label="Next slide">›</button>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+
+</html>
