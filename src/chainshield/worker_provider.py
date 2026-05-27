@@ -106,6 +106,13 @@ def build_agent_invocation(
 ) -> dict[str, Any]:
     clean_errors = [redact_provider_text(error) for error in (errors or [])]
     clean_observations = [redact_provider_text(item) for item in (observations or [])]
+    output_safety = sanitize_text(json.dumps({"errors": clean_errors, "observations": clean_observations}, ensure_ascii=False))
+    if not output_safety.safe:
+        status = "manual_review"
+        finding_status = "inconclusive"
+        clean_observations = []
+        clean_errors = ["worker_output_sanitization_failed: " + ", ".join(output_safety.reasons)]
+        missing_evidence = list(dict.fromkeys([*(missing_evidence or []), "worker_output_sanitization"]))
     if finding_status is None and status not in {"failed", "skipped"}:
         finding_status = "inconclusive"
     return {

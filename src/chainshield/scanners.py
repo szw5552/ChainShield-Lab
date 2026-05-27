@@ -150,6 +150,17 @@ def run_live_scanner(
     try:
         data = json.loads(stdout) if stdout.strip() else {}
     except json.JSONDecodeError:
+        if completed.returncode not in (0, None):
+            return _live_unavailable_from_json_error(
+                gate=gate,
+                run_id=run_id,
+                command=summary,
+                exit_code=completed.returncode,
+                started_at=started_at,
+                ended_at=ended_at,
+                stderr=stderr,
+                reason="live scanner output was not usable JSON",
+            )
         classification = _classify_unavailable(stderr, completed.returncode)
         return manual_review_evidence(
             gate=gate,

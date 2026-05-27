@@ -160,6 +160,45 @@ def test_worker_output_artifact_write_failure_forces_manual_review(tmp_path):
         packet_path.unlink(missing_ok=True)
 
 
+def test_worker_provider_sanitizes_unsafe_provider_text(tmp_path):
+    provider = WorkerProviderConfig.default_enabled(str(tmp_path / "worker-summary.json"))
+    packet_path = Path(task_packet_path_for_run("run-worker-unsafe-text"))
+    packet_path.unlink(missing_ok=True)
+
+    def runner(name, packet, timeout_seconds):
+        return {
+            "finding_status": "clear",
+            "observations": [
+                "sanitized evidence is complete",
+                "-----BEGIN OPENSSH PRIVATE KEY-----",
+                "raw scanner log",
+            ],
+            "errors": ["aws_access_key_id = should-not-persist"],
+        }
+
+    try:
+        invocations, worker_paths = run_worker_provider(
+            provider,
+            request_id="REQ-worker-unsafe-text",
+            run_id="run-worker-unsafe-text",
+            gate_results=[],
+            artifacts={"reports": [], "logs": []},
+            provider_runner=runner,
+        )
+
+        invocation_text = json.dumps(invocations, ensure_ascii=False)
+        assert invocations[-1]["status"] == "manual_review"
+        assert invocations[-1]["finding_status"] == "inconclusive"
+        assert invocations[-1]["observations"] == []
+        assert any("worker_output_sanitization" in item for item in invocations[-1]["missing_evidence"])
+        assert "OPENSSH PRIVATE KEY" not in invocation_text
+        assert "raw scanner log" not in invocation_text
+        assert "aws_access_key_id" not in invocation_text
+        assert str(tmp_path / "worker-summary.json") not in worker_paths
+    finally:
+        packet_path.unlink(missing_ok=True)
+
+
 def test_worker_boundary_allows_safe_tool_name_mentions_but_blocks_execution_intent():
     safe = validate_worker_output_boundary(
         {"observations": ["OpenShell evidence includes filesystem and egress denial events."], "finding_status": "clear"}

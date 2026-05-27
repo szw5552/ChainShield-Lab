@@ -24,9 +24,9 @@ class ArtifactWriteError(RuntimeError):
 SENSITIVE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (
         re.compile(
-            r"(Authorization:\s*Bearer\s+\S+|"
-            r"['\"]?(?:NVIDIA_)?API[_-]?KEY['\"]?\s*[:=]\s*['\"]?[^\s,'\"]+|"
-            r"['\"]?TOKEN['\"]?\s*[:=]\s*['\"]?[^\s,'\"]+|"
+            r"(Authorization:\s*Bearer\s+(?!\[REDACTED\]\b)\S+|"
+            r"['\"]?(?:NVIDIA_)?API[_-]?KEY['\"]?\s*[:=]\s*['\"]?(?!\[REDACTED\]['\"]?)[^\s,'\"]+|"
+            r"['\"]?TOKEN['\"]?\s*[:=]\s*['\"]?(?!\[REDACTED\]['\"]?)[^\s,'\"]+|"
             r"\bsk-[A-Za-z0-9_-]{16,})",
             re.I,
         ),

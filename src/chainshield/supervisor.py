@@ -129,6 +129,15 @@ def _conflicting_static_gates(results: list[dict[str, Any]]) -> tuple[list[str],
     return reasons, missing
 
 
+def _missing_static_gates_for_deny(by_gate: dict[str, dict[str, Any]], scanner_mode: dict[str, str]) -> list[str]:
+    missing: list[str] = []
+    for gate in STATIC_GATES:
+        item = by_gate.get(gate)
+        if scanner_mode.get(gate) == "skip" or item is None or item.get("status") in {"manual_review", "skipped"}:
+            missing.append(gate)
+    return list(dict.fromkeys(missing))
+
+
 def _openshell_sufficient(item: dict[str, Any] | None) -> tuple[bool, list[str]]:
     if item is None:
         return True, []
@@ -207,6 +216,7 @@ def decide_static_gates(
             primary_reasons=reasons,
             gate_results=results,
             agent_invocations=agent_invocations or [],
+            missing_gates=_missing_static_gates_for_deny(by_gate, scanner_mode),
             next_actions=next_actions,
             request_id=request_id,
             run_id=run_id,

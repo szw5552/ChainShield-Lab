@@ -1,5 +1,6 @@
 import json
 import tomllib
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -53,6 +54,22 @@ def test_jsonschema_is_runtime_dependency_not_test_only():
 
     assert "jsonschema>=4.21" in pyproject["project"]["dependencies"]
     assert "jsonschema>=4.21" not in pyproject["project"]["optional-dependencies"]["test"]
+
+
+def test_worker_provider_enabled_rejects_disabled_primary():
+    config = deepcopy(BASE_CONFIG)
+    config["worker_provider"] = {
+        "enabled": True,
+        "primary": "disabled",
+        "fallbacks": [],
+        "timeout_seconds": 60,
+        "output_path": "reports/worker/test-disabled-primary.json",
+    }
+
+    with pytest.raises(ConfigValidationError) as excinfo:
+        validate_demo_config(config, config_path=Path("fixtures/configs/worker-disabled-primary.json"))
+
+    assert "nemotron_api" in str(excinfo.value)
 
 
 def test_sandbox_demo_override_requires_a_reason():
@@ -151,6 +168,45 @@ def test_demo_config_allows_author_filename_without_sensitive_path_false_positiv
     parsed = validate_demo_config(config, config_path=Path("fixtures/configs/author.json"))
 
     assert parsed.fixtures["snyk_report"] == "fixtures/configs/demo-author-allow.json"
+
+
+@pytest.mark.parametrize(
+    "field, path_value, expected",
+    [
+        ("fixtures.snyk_report", "src/chainshield/config.py", "controlled fixtures"),
+        ("fixtures.openshell_policy", "fixtures/reports/openshell-deny.log", "controlled policies"),
+        ("outputs.decision_json", "fixtures/reports/decision.json", "approved reports"),
+    ],
+)
+def test_demo_config_rejects_paths_outside_allowed_category_roots(field, path_value, expected):
+    config = deepcopy(BASE_CONFIG)
+    section, key = field.split(".")
+    config[section][key] = path_value
+
+    with pytest.raises(ConfigValidationError) as excinfo:
+        validate_demo_config(config, config_path=Path("fixtures/configs/bad-category-path.json"))
+
+    assert expected in str(excinfo.value)
+
+
+def test_demo_config_rejects_symlink_to_sensitive_named_repo_file(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "fixtures/configs").mkdir(parents=True)
+    (repo / "fixtures/reports").mkdir(parents=True)
+    (repo / "fixtures/canary").mkdir(parents=True)
+    (repo / "reports").mkdir()
+    target = repo / "fixtures/configs/.npmrc"
+    target.write_text("registry=https://example.invalid", encoding="utf-8")
+    link = repo / "fixtures/reports/benign.json"
+    link.symlink_to(target)
+
+    config = deepcopy(BASE_CONFIG)
+    config["fixtures"]["snyk_report"] = "fixtures/reports/benign.json"
+
+    with pytest.raises(ConfigValidationError) as excinfo:
+        validate_demo_config(config, config_path=repo / "fixtures/configs/sensitive-symlink.json", repo_root=repo)
+
+    assert "sensitive path pattern" in str(excinfo.value)
 
 
 def test_demo_config_rejects_output_collision(tmp_path):

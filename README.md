@@ -180,7 +180,7 @@ pytest tests/integration/test_decision_outputs.py
 ```text
 src/chainshield/                 # Supervisor CLI、evidence normalization、sandbox/worker adapters
 fixtures/configs/                # Demo configs for deny/allow/manual_review/sandbox/worker
-fixturesreports/                # Sanitized Snyk/Socket/OpenShell fixture reports
+fixtures/reports/                # Sanitized Snyk/Socket/OpenShell fixture reports
 fixtures/malicious-poc-pkg/      # PoC-only npm package; private and local-only
 fixtures/poc-app/                # npm app fixture and lockfile
 fixtures/canary/                 # Synthetic canary secrets for sandbox demo only

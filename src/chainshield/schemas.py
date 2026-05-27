@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from jsonschema import Draft202012Validator
+from jsonschema import Draft202012Validator, FormatChecker
 from referencing import Registry, Resource
 from referencing.jsonschema import DRAFT202012
 
@@ -33,9 +34,27 @@ def _schema_registry() -> Registry:
     return Registry().with_resources(resources)
 
 
+@lru_cache(maxsize=1)
+def _format_checker() -> FormatChecker:
+    checker = FormatChecker()
+
+    @checker.checks("date-time", raises=ValueError)
+    def is_date_time(value: Any) -> bool:
+        if not isinstance(value, str):
+            return False
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed.tzinfo is not None
+
+    return checker
+
+
 def validator_for(name: str) -> Draft202012Validator:
     schema = load_schema(name)
-    return Draft202012Validator(schema, registry=_schema_registry())
+    return Draft202012Validator(
+        schema,
+        registry=_schema_registry(),
+        format_checker=_format_checker(),
+    )
 
 
 def validate_contract(name: str, instance: Any, *, raise_on_error: bool = True):

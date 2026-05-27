@@ -118,3 +118,30 @@ def test_invalid_config_rotates_when_fallback_artifact_already_exists(tmp_path, 
         fallback_path.unlink(missing_ok=True)
         if created_path:
             created_path.unlink(missing_ok=True)
+
+
+@pytest.mark.parametrize(
+    "config_path",
+    [
+        Path("fixtures/configs/missing-config.json"),
+        None,
+    ],
+)
+def test_unreadable_config_writes_manual_review_and_blocks_execution(config_path, tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "run_scanners", lambda *a, **k: pytest.fail("scanner must not run"))
+    monkeypatch.setattr(cli, "run_sandbox", lambda *a, **k: pytest.fail("sandbox must not run"))
+    fallback_path = Path("reports/manual-review-invalid-config.json")
+    fallback_path.unlink(missing_ok=True)
+    if config_path is None:
+        config_path = tmp_path / "invalid-utf8.json"
+        config_path.write_bytes(b"\xff\xfe\x00")
+
+    try:
+        exit_code = cli.main(["evaluate", "--config", str(config_path)])
+
+        assert exit_code == 2
+        decision = json.loads(fallback_path.read_text(encoding="utf-8"))
+        assert decision["decision"] == "manual_review"
+        assert any("config validation failed" in reason.lower() for reason in decision["primary_reasons"])
+    finally:
+        fallback_path.unlink(missing_ok=True)

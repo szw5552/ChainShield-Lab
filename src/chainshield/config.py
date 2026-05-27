@@ -115,6 +115,10 @@ class DemoConfig:
             raw = json.loads(config_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
             raise ConfigValidationError([f"invalid JSON: {exc.msg}"]) from exc
+        except UnicodeDecodeError as exc:
+            raise ConfigValidationError([f"invalid encoding: config must be UTF-8 ({exc.reason})"]) from exc
+        except OSError as exc:
+            raise ConfigValidationError([f"config unreadable: {exc.strerror or type(exc).__name__}"]) from exc
         return validate_demo_config(raw, config_path=config_path, repo_root=repo_root)
 
 
@@ -163,11 +167,37 @@ def _path_fields(raw: dict[str, Any]):
 def _validate_paths(raw: dict[str, Any], *, repo_root: Path) -> list[str]:
     errors: list[str] = []
     for field, value in _path_fields(raw):
-        errors.extend(validate_repo_local_path(field, value, repo_root=repo_root))
+        allowed_root, allowed_label = _allowed_path_root(field)
+        errors.extend(
+            validate_repo_local_path(
+                field,
+                value,
+                repo_root=repo_root,
+                allowed_root=allowed_root,
+                allowed_label=allowed_label,
+            )
+        )
     return errors
 
 
-def validate_repo_local_path(field: str, value: str, *, repo_root: Path = REPO_ROOT) -> list[str]:
+def _allowed_path_root(field: str) -> tuple[str | None, str]:
+    if field == "fixtures.openshell_policy":
+        return "policies", "controlled policies"
+    if field.startswith("fixtures."):
+        return "fixtures", "controlled fixtures"
+    if field.startswith("outputs.") or field == "worker_provider.output_path":
+        return "reports", "approved reports"
+    return None, "repository-local path"
+
+
+def validate_repo_local_path(
+    field: str,
+    value: str,
+    *,
+    repo_root: Path = REPO_ROOT,
+    allowed_root: str | None = None,
+    allowed_label: str = "repository-local path",
+) -> list[str]:
     errors: list[str] = []
     root = repo_root.resolve()
     normalized = value.replace("\\", "/")
@@ -187,20 +217,32 @@ def validate_repo_local_path(field: str, value: str, *, repo_root: Path = REPO_R
         except FileNotFoundError:
             return [f"{field}: broken symlink is not allowed"]
         try:
-            real.relative_to(root)
+            real_relative = real.relative_to(root)
         except ValueError:
             reason = "symlink escape" if full.is_symlink() else "repository-local path"
             return [f"{field}: {reason} is not allowed"]
+        if SENSITIVE_PATH_RE.search(real_relative.as_posix()):
+            return [f"{field}: sensitive path pattern is not allowed"]
     resolved = full.resolve(strict=False)
     try:
-        resolved.relative_to(root)
+        relative = resolved.relative_to(root)
     except ValueError:
         errors.append(f"{field}: repository-local path required")
+        return errors
+    if allowed_root and (not relative.parts or relative.parts[0] != allowed_root):
+        errors.append(f"{field}: path must stay under {allowed_label}")
     return errors
 
 
 def validate_output_path(field: str, value: str, *, repo_root: Path = REPO_ROOT) -> list[str]:
-    errors = validate_repo_local_path(field, value, repo_root=repo_root)
+    allowed_root, allowed_label = _allowed_path_root(field)
+    errors = validate_repo_local_path(
+        field,
+        value,
+        repo_root=repo_root,
+        allowed_root=allowed_root,
+        allowed_label=allowed_label,
+    )
     if not errors and (repo_root / value).exists():
         errors.append(f"{field}: output path already exists; use a new output path")
     return errors

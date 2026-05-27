@@ -59,6 +59,19 @@ def test_static_deny_cannot_be_overridden_by_sandbox_demo_override():
     assert any("override" in action.lower() for action in decision.next_actions)
 
 
+def test_static_deny_still_reports_missing_peer_static_gate():
+    missing_socket = decide_static_gates([evidence("snyk", "deny")])
+    skipped_socket = decide_static_gates(
+        [evidence("snyk", "deny")],
+        scanner_mode={"snyk": "fixture", "socket": "skip"},
+    )
+
+    assert missing_socket.decision == "deny"
+    assert missing_socket.missing_gates == ["socket"]
+    assert skipped_socket.decision == "deny"
+    assert skipped_socket.missing_gates == ["socket"]
+
+
 def test_allow_requires_snyk_socket_pass_with_fixture_or_live_source_kind():
     decision = decide_static_gates([evidence("snyk", "pass"), evidence("socket", "pass")])
     assert decision.decision == "allow"

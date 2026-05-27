@@ -78,6 +78,26 @@ def test_live_snyk_empty_stdout_with_failure_requires_manual_review_and_fixture_
     assert any("live_unavailable fallback used fixture evidence" in reason for reason in results[0]["reasons"])
 
 
+def test_live_snyk_malformed_auth_output_uses_fixture_fallback():
+    def runner(command, **kwargs):
+        return subprocess.CompletedProcess(command, 2, stdout="Authentication failed", stderr="Authentication failed")
+
+    live = scanners.run_live_scanner("snyk", run_id="run-snyk-malformed", runner=runner)
+
+    assert live["status"] == "manual_review"
+    assert any("live_unavailable" in reason for reason in live["reasons"])
+
+    results = scanners.run_scanners(
+        scanner_mode={"snyk": "live", "socket": "skip"},
+        fixtures={"snyk_report": "fixtures/reports/snyk-pass.json", "socket_report": None},
+        run_id="run-snyk-malformed",
+        runner=runner,
+    )
+
+    assert results[0]["status"] == "pass"
+    assert any("live_unavailable fallback used fixture evidence" in reason for reason in results[0]["reasons"])
+
+
 @pytest.mark.parametrize("gate", ["snyk", "socket"])
 def test_live_scanner_nonzero_json_error_requires_manual_review_and_fixture_fallback(gate):
     def runner(command, **kwargs):

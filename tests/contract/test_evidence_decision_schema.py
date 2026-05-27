@@ -44,6 +44,10 @@ def test_gate_evidence_schema_requires_sanitized_evidence():
     errors = validate_contract("gate-evidence.schema.json", dirty, raise_on_error=False)
     assert any("True was expected" in error.message for error in errors)
 
+    bad_timestamp = dict(GATE_EVIDENCE, observed_at="not-a-date-time")
+    errors = validate_contract("gate-evidence.schema.json", bad_timestamp, raise_on_error=False)
+    assert any("date-time" in error.message for error in errors)
+
 
 def test_agent_invocation_schema_requires_finding_status_for_pass_only():
     passing = dict(AGENT_INVOCATION, status="pass", finding_status="clear")
@@ -56,6 +60,10 @@ def test_agent_invocation_schema_requires_finding_status_for_pass_only():
     invalid_failed = dict(AGENT_INVOCATION, status="failed", finding_status="clear")
     errors = validate_contract("agent-invocation-evidence.schema.json", invalid_failed, raise_on_error=False)
     assert errors
+
+    bad_timestamp = dict(AGENT_INVOCATION, observed_at="not-a-date-time")
+    errors = validate_contract("agent-invocation-evidence.schema.json", bad_timestamp, raise_on_error=False)
+    assert any("date-time" in error.message for error in errors)
 
 
 def test_supervisor_decision_schema_requires_traceable_fields_and_worker_metadata():
@@ -92,3 +100,7 @@ def test_supervisor_decision_schema_requires_traceable_fields_and_worker_metadat
     missing.pop("primary_reasons")
     errors = validate_contract("supervisor-decision.schema.json", missing, raise_on_error=False)
     assert any("'primary_reasons' is a required property" in error.message for error in errors)
+
+    bad_timestamp = dict(decision, generated_at="not-a-date-time")
+    errors = validate_contract("supervisor-decision.schema.json", bad_timestamp, raise_on_error=False)
+    assert any("date-time" in error.message for error in errors)

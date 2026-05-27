@@ -8,6 +8,7 @@ from chainshield.artifacts import ArtifactWriteError, write_json_artifact
 
 
 REPORTS = Path("reports")
+FIXTURE_REPORTS = Path("fixtures/reports")
 
 
 def cleanup(*paths):
@@ -17,7 +18,7 @@ def cleanup(*paths):
 
 
 def test_unsafe_fixture_report_is_rejected_before_decision_artifact_is_saved(tmp_path):
-    unsafe_report = REPORTS / "test-redaction-unsafe-snyk.json"
+    unsafe_report = FIXTURE_REPORTS / "test-redaction-unsafe-snyk.json"
     decision_path = REPORTS / "test-redaction-decision.json"
     summary_path = REPORTS / "test-redaction-summary.md"
     cleanup(unsafe_report, decision_path, summary_path)
