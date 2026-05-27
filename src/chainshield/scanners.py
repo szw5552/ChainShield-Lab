@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable
 
 from .evidence import (
@@ -66,6 +67,7 @@ def run_live_scanner(
     command: list[str] | None = None,
     *,
     run_id: str,
+    cwd: str | Path | None = None,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
     timeout_seconds: int = LIVE_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
@@ -73,7 +75,7 @@ def run_live_scanner(
     summary = _command_summary(command)
     started_at = _utc_now()
     try:
-        completed = runner(command, capture_output=True, text=True, timeout=timeout_seconds, check=False)
+        completed = runner(command, cwd=cwd, capture_output=True, text=True, timeout=timeout_seconds, check=False)
     except subprocess.TimeoutExpired:
         ended_at = _utc_now()
         return manual_review_evidence(
@@ -179,6 +181,7 @@ def run_scanners(
     scanner_mode = scanner_mode or {"snyk": "fixture", "socket": "fixture"}
     fixtures = fixtures or {}
     run_id = run_id or "run-us1"
+    live_cwd = fixtures.get("poc_app")
 
     results: list[dict[str, Any]] = []
     for gate in ("snyk", "socket"):
@@ -203,7 +206,7 @@ def run_scanners(
                 results.append(_load_fixture(gate, path, run_id))
             continue
 
-        live_evidence = run_live_scanner(gate, run_id=run_id, runner=runner)
+        live_evidence = run_live_scanner(gate, run_id=run_id, cwd=live_cwd, runner=runner)
         if live_evidence["status"] == "manual_review" and any("live_unavailable" in reason for reason in live_evidence["reasons"]):
             if path:
                 results.append(_with_live_unavailable(_load_fixture(gate, path, run_id), live_evidence))

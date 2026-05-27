@@ -54,3 +54,17 @@ def test_live_unavailable_falls_back_to_fixture_and_marks_evidence(monkeypatch):
     assert results[0]["gate"] == "snyk"
     assert results[0]["status"] == "pass"
     assert any("live_unavailable" in reason for reason in results[0]["reasons"])
+
+
+def test_live_scanner_runs_in_configured_poc_app_directory():
+    calls = {}
+
+    def runner(command, **kwargs):
+        calls["command"] = command
+        calls["cwd"] = kwargs.get("cwd")
+        return subprocess.CompletedProcess(command, 0, stdout='{"vulnerabilities":[]}', stderr="")
+
+    evidence = scanners.run_live_scanner("snyk", run_id="run-cwd", cwd="fixtures/poc-app", runner=runner)
+
+    assert evidence["status"] == "pass"
+    assert calls["cwd"] == "fixtures/poc-app"

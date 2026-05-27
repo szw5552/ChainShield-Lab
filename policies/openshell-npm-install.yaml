@@ -1,23 +1,22 @@
 # ChainShield PoC-only OpenShell policy template for sandboxed npm install.
 # Verify CLI/schema against the local OpenShell/NemoClaw version before live use.
 version: 1
-name: chainshield-npm-install-containment
-scope: sandbox-only
-filesystem:
-  default: deny
-  allow:
-    - /workspace/fixtures/poc-app/**
-    - /workspace/fixtures/malicious-poc-pkg/**
-    - /tmp/chainshield-npm-cache/**
-  deny:
-    - /sandbox/canary/canary-secret.txt
-network:
-  default: deny
-  allow: []
-  deny:
-    - https://chainshield-egress-test.invalid/collect
-rules:
-  fs.default_deny:
-    description: Block synthetic canary read outside the install allowlist.
-  net.default_deny:
-    description: Block all sandbox egress including the synthetic test target.
+filesystem_policy:
+  include_workdir: false
+  read_only:
+    - /workspace/fixtures/poc-app
+    - /workspace/fixtures/malicious-poc-pkg
+  read_write:
+    - /tmp/chainshield-npm-cache
+landlock:
+  compatibility: best_effort
+process:
+  run_as_user: sandbox
+  run_as_group: sandbox
+network_policies:
+  chainshield_default_deny:
+    name: chainshield-default-deny
+    endpoints: []
+    binaries:
+      - { path: /usr/bin/npm }
+      - { path: /usr/bin/node }

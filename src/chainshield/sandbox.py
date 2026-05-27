@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -11,10 +12,18 @@ from .evidence import gate_evidence, normalize_openshell_log, normalize_openshel
 LIVE_SANDBOX_TIMEOUT_SECONDS = 300
 MANUAL_SANDBOX_VERIFICATION_PATH = "specs/001-orbstack-sandbox-gates/quickstart.md#manual-sandbox-verification"
 DEFAULT_OPENSHELL_POLICY = "policies/openshell-npm-install.yaml"
+SAFE_ENV_KEYS = {"PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE"}
 
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def build_sandbox_env(canary_path: str) -> dict[str, str]:
+    safe_env = {key: value for key, value in os.environ.items() if key in SAFE_ENV_KEYS and value}
+    safe_env.setdefault("PATH", "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")
+    safe_env["CHAINSHIELD_CANARY_PATH"] = str(Path(canary_path))
+    return safe_env
 
 
 @dataclass(frozen=True)
@@ -162,7 +171,7 @@ def run_live_sandbox_install(
             text=True,
             timeout=timeout_seconds,
             check=False,
-            env={"CHAINSHIELD_CANARY_PATH": str(Path(canary_path))},
+            env=build_sandbox_env(canary_path),
         )
     except subprocess.TimeoutExpired:
         ended_at = _utc_now()

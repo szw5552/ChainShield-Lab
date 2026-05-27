@@ -161,37 +161,44 @@ def _path_fields(raw: dict[str, Any]):
 
 def _validate_paths(raw: dict[str, Any], *, repo_root: Path) -> list[str]:
     errors: list[str] = []
-    root = repo_root.resolve()
     for field, value in _path_fields(raw):
-        normalized = value.replace("\\", "/")
-        candidate = Path(value)
-        if normalized.startswith("~") or "$HOME" in normalized or "${HOME}" in normalized:
-            errors.append(f"{field}: home expansion is not allowed")
-            continue
-        if candidate.is_absolute():
-            errors.append(f"{field}: absolute path is not allowed")
-            continue
-        if ".." in candidate.parts:
-            errors.append(f"{field}: parent traversal is not allowed")
-            continue
-        if SENSITIVE_PATH_RE.search(normalized):
-            errors.append(f"{field}: sensitive path pattern is not allowed")
-            continue
-        full = root / candidate
-        if full.exists() or full.is_symlink():
-            real = full.resolve(strict=True)
-            try:
-                real.relative_to(root)
-            except ValueError:
-                reason = "symlink escape" if full.is_symlink() else "repository-local path"
-                errors.append(f"{field}: {reason} is not allowed")
-                continue
-        resolved = full.resolve(strict=False)
+        errors.extend(validate_repo_local_path(field, value, repo_root=repo_root))
+    return errors
+
+
+def validate_repo_local_path(field: str, value: str, *, repo_root: Path = REPO_ROOT) -> list[str]:
+    errors: list[str] = []
+    root = repo_root.resolve()
+    normalized = value.replace("\\", "/")
+    candidate = Path(value)
+    if normalized.startswith("~") or "$HOME" in normalized or "${HOME}" in normalized:
+        return [f"{field}: home expansion is not allowed"]
+    if candidate.is_absolute():
+        return [f"{field}: absolute path is not allowed"]
+    if ".." in candidate.parts:
+        return [f"{field}: parent traversal is not allowed"]
+    if SENSITIVE_PATH_RE.search(normalized):
+        return [f"{field}: sensitive path pattern is not allowed"]
+    full = root / candidate
+    if full.exists() or full.is_symlink():
+        real = full.resolve(strict=True)
         try:
-            resolved.relative_to(root)
+            real.relative_to(root)
         except ValueError:
-            errors.append(f"{field}: repository-local path required")
-            continue
+            reason = "symlink escape" if full.is_symlink() else "repository-local path"
+            return [f"{field}: {reason} is not allowed"]
+    resolved = full.resolve(strict=False)
+    try:
+        resolved.relative_to(root)
+    except ValueError:
+        errors.append(f"{field}: repository-local path required")
+    return errors
+
+
+def validate_output_path(field: str, value: str, *, repo_root: Path = REPO_ROOT) -> list[str]:
+    errors = validate_repo_local_path(field, value, repo_root=repo_root)
+    if not errors and (repo_root / value).exists():
+        errors.append(f"{field}: output path already exists; use a new output path")
     return errors
 
 
@@ -199,10 +206,10 @@ def _validate_output_collisions(raw: dict[str, Any], *, repo_root: Path) -> list
     errors: list[str] = []
     for field in ("decision_json", "markdown_summary"):
         value = raw.get("outputs", {}).get(field)
-        if value and (repo_root / value).exists():
+        if value and (repo_root / str(value)).exists():
             errors.append(f"outputs.{field}: output path already exists; use a new output path")
     worker_output = raw.get("worker_provider", {}).get("output_path") if isinstance(raw.get("worker_provider"), dict) else None
-    if worker_output and (repo_root / worker_output).exists():
+    if worker_output and (repo_root / str(worker_output)).exists():
         errors.append("worker_provider.output_path: output path already exists; use a new output path")
     return errors
 

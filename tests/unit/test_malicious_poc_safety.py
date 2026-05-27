@@ -20,6 +20,8 @@ def test_postinstall_uses_only_synthetic_canary_and_egress_target():
 def test_invalid_config_and_static_deny_do_not_trigger_host_npm_lifecycle(monkeypatch, tmp_path):
     calls = {"sandbox": 0}
     monkeypatch.setattr(cli, "run_sandbox", lambda *args, **kwargs: calls.__setitem__("sandbox", calls["sandbox"] + 1))
+    invalid_decision_path = Path("reports/test-invalid-host-block-decision.json")
+    invalid_decision_path.unlink(missing_ok=True)
 
     invalid = {
         "version": 1,
@@ -35,7 +37,7 @@ def test_invalid_config_and_static_deny_do_not_trigger_host_npm_lifecycle(monkey
             "openshell_log": "fixtures/reports/openshell-deny.log",
             "canary_secret": "fixtures/canary/canary-secret.txt",
         },
-        "outputs": {"decision_json": str(tmp_path / "invalid-decision.json"), "markdown_summary": None},
+        "outputs": {"decision_json": str(invalid_decision_path), "markdown_summary": None},
         "safety": {
             "synthetic_egress_target": "https://chainshield-egress-test.invalid/collect",
             "sandbox_demo_override": {"enabled": False, "reason": None},
@@ -44,15 +46,18 @@ def test_invalid_config_and_static_deny_do_not_trigger_host_npm_lifecycle(monkey
     invalid_path = tmp_path / "invalid.json"
     invalid_path.write_text(json.dumps(invalid), encoding="utf-8")
 
-    assert cli.main(["evaluate", "--config", str(invalid_path), "--sandbox-only"]) == 2
     decision_path = Path("reports/demo-fixture-deny-decision.json")
     summary_path = Path("reports/demo-fixture-deny-summary.md")
     decision_path.unlink(missing_ok=True)
     summary_path.unlink(missing_ok=True)
-    assert cli.main(["evaluate", "--config", "fixtures/configs/demo-fixture-deny.json", "--sandbox-only"]) == 1
-    assert calls["sandbox"] == 0
-    decision_path.unlink(missing_ok=True)
-    summary_path.unlink(missing_ok=True)
+    try:
+        assert cli.main(["evaluate", "--config", str(invalid_path), "--sandbox-only"]) == 2
+        assert cli.main(["evaluate", "--config", "fixtures/configs/demo-fixture-deny.json", "--sandbox-only"]) == 1
+        assert calls["sandbox"] == 0
+    finally:
+        invalid_decision_path.unlink(missing_ok=True)
+        decision_path.unlink(missing_ok=True)
+        summary_path.unlink(missing_ok=True)
 
 
 def test_poc_lockfile_and_manifest_remain_local_private_and_non_publishable():

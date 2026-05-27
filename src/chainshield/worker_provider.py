@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from .artifacts import ArtifactWriteError, sanitize_text, write_json_artifact
+from .artifacts import ArtifactWriteError, redact_text, sanitize_text, write_json_artifact
 from .config import DEFAULT_WORKER_TIMEOUT_SECONDS, WorkerProviderConfig
 
 DEFAULT_NEMOTRON_BASE_URL = "https://integrate.api.nvidia.com/v1"
@@ -37,12 +37,13 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def task_packet_path_for_run(run_id: str) -> str:
+    safe_run_id = re.sub(r"[^0-9A-Za-z_.-]+", "-", run_id).strip("-") or "run"
+    return f"reports/worker-task-packet-{safe_run_id}.json"
+
+
 def redact_provider_text(text: str) -> str:
-    redacted = re.sub(r"(Authorization:\s*Bearer\s+)\S+", r"\1[REDACTED]", text, flags=re.I)
-    redacted = re.sub(r"(NVIDIA_API_KEY\s*=)\S+", r"\1[REDACTED]", redacted, flags=re.I)
-    redacted = re.sub(r"(API[_-]?KEY\s*=)\S+", r"\1[REDACTED]", redacted, flags=re.I)
-    redacted = re.sub(r"(TOKEN\s*=)\S+", r"\1[REDACTED]", redacted, flags=re.I)
-    return redacted
+    return redact_text(text)
 
 
 def build_worker_task_packet(
@@ -204,12 +205,21 @@ def _normalize_response(
     output_path: str | None,
 ) -> dict[str, Any]:
     boundary = validate_worker_output_boundary(response)
-    status = str(response.get("status") or ("manual_review" if boundary.boundary_violation else "failed"))
-    if boundary.boundary_violation:
-        status = "manual_review"
     finding = response.get("finding_status")
     if finding not in {"clear", "concern", "inconclusive", None}:
         finding = "inconclusive"
+    missing_evidence = [str(item) for item in response.get("missing_evidence", [])]
+    errors = [str(item) for item in response.get("errors", [])]
+    if response.get("status"):
+        status = str(response["status"])
+    elif finding == "clear" and not missing_evidence and not errors:
+        status = "pass"
+    elif finding in {"concern", "inconclusive"} or missing_evidence:
+        status = "manual_review"
+    else:
+        status = "failed"
+    if boundary.boundary_violation:
+        status = "manual_review"
     return build_agent_invocation(
         provider=provider,
         model=str(response.get("model") or _provider_model(provider)),
@@ -222,8 +232,8 @@ def _normalize_response(
         task_packet_path=packet_path,
         input_artifacts=input_artifacts,
         output_artifact_path=output_path if status == "pass" else None,
-        missing_evidence=[str(item) for item in response.get("missing_evidence", [])],
-        errors=[str(item) for item in response.get("errors", [])],
+        missing_evidence=missing_evidence,
+        errors=errors,
         observations=[str(item) for item in response.get("observations", [])],
     )
 
@@ -253,11 +263,12 @@ def run_worker_provider(
         evidence_checklist=checklist,
         output_path=provider.output_path,
     )
+    packet_path = task_packet_path_for_run(run_id)
     try:
-        write_json_artifact(TASK_PACKET_PATH, packet)
+        write_json_artifact(packet_path, packet)
     except ArtifactWriteError:
-        # Existing task packets are runtime artifacts; keep evaluating with an in-memory packet.
-        pass
+        # Existing task packets are runtime artifacts; avoid pointing at stale evidence.
+        packet_path = "in-memory"
 
     runner = provider_runner or _default_provider_runner
     invocations: list[dict[str, Any]] = []
@@ -273,7 +284,7 @@ def run_worker_provider(
             response=response,
             request_id=request_id,
             run_id=run_id,
-            packet_path=TASK_PACKET_PATH,
+            packet_path=packet_path,
             input_artifacts=input_artifacts,
             output_path=provider.output_path,
         )
@@ -281,5 +292,9 @@ def run_worker_provider(
         if invocation["status"] == "pass" and invocation["finding_status"] == "clear" and not invocation["boundary_violation"]:
             break
 
-    worker_paths = [provider.output_path] if provider.output_path else []
+    worker_paths = []
+    if packet_path != "in-memory":
+        worker_paths.append(packet_path)
+    if provider.output_path:
+        worker_paths.append(provider.output_path)
     return invocations, worker_paths

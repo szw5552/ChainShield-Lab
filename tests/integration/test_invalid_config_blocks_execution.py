@@ -39,26 +39,56 @@ def test_invalid_config_writes_manual_review_and_blocks_scanner_sandbox(tmp_path
     calls = {"scanner": 0, "sandbox": 0}
     monkeypatch.setattr(cli, "run_scanners", lambda *a, **k: calls.__setitem__("scanner", calls["scanner"] + 1))
     monkeypatch.setattr(cli, "run_sandbox", lambda *a, **k: calls.__setitem__("sandbox", calls["sandbox"] + 1))
-    decision_path = tmp_path / "decision.json"
+    decision_path = Path("reports/test-invalid-config-decision.json")
+    decision_path.unlink(missing_ok=True)
     config_path = write_invalid_config(tmp_path, decision_path)
 
-    exit_code = cli.main(["evaluate", "--config", str(config_path)])
+    try:
+        exit_code = cli.main(["evaluate", "--config", str(config_path)])
 
-    assert exit_code == 2
-    decision = json.loads(decision_path.read_text(encoding="utf-8"))
-    assert decision["decision"] == "manual_review"
-    assert any("config validation" in reason.lower() for reason in decision["primary_reasons"])
-    assert calls == {"scanner": 0, "sandbox": 0}
+        assert exit_code == 2
+        decision = json.loads(decision_path.read_text(encoding="utf-8"))
+        assert decision["decision"] == "manual_review"
+        assert any("config validation" in reason.lower() for reason in decision["primary_reasons"])
+        assert calls == {"scanner": 0, "sandbox": 0}
+    finally:
+        decision_path.unlink(missing_ok=True)
 
 
 def test_existing_output_path_is_not_overwritten(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "run_scanners", lambda *a, **k: pytest.fail("scanner must not run"))
     monkeypatch.setattr(cli, "run_sandbox", lambda *a, **k: pytest.fail("sandbox must not run"))
-    decision_path = tmp_path / "decision.json"
+    fallback_path = Path("reports/manual-review-invalid-config.json")
+    fallback_path.unlink(missing_ok=True)
+    decision_path = Path("reports/test-existing-invalid-config-decision.json")
+    decision_path.parent.mkdir(exist_ok=True)
     decision_path.write_text('{"existing": true}', encoding="utf-8")
     config_path = write_invalid_config(tmp_path, decision_path)
 
-    exit_code = cli.main(["evaluate", "--config", str(config_path)])
+    try:
+        exit_code = cli.main(["evaluate", "--config", str(config_path)])
 
-    assert exit_code == 2
-    assert json.loads(decision_path.read_text(encoding="utf-8")) == {"existing": True}
+        assert exit_code == 2
+        assert json.loads(decision_path.read_text(encoding="utf-8")) == {"existing": True}
+        assert json.loads(fallback_path.read_text(encoding="utf-8"))["decision"] == "manual_review"
+    finally:
+        decision_path.unlink(missing_ok=True)
+        fallback_path.unlink(missing_ok=True)
+
+
+def test_invalid_config_unsafe_raw_output_falls_back_to_safe_report(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "run_scanners", lambda *a, **k: pytest.fail("scanner must not run"))
+    monkeypatch.setattr(cli, "run_sandbox", lambda *a, **k: pytest.fail("sandbox must not run"))
+    fallback_path = Path("reports/manual-review-invalid-config.json")
+    fallback_path.unlink(missing_ok=True)
+    unsafe_output = tmp_path / "outside-decision.json"
+    config_path = write_invalid_config(tmp_path, unsafe_output)
+
+    try:
+        exit_code = cli.main(["evaluate", "--config", str(config_path)])
+
+        assert exit_code == 2
+        assert not unsafe_output.exists()
+        assert json.loads(fallback_path.read_text(encoding="utf-8"))["decision"] == "manual_review"
+    finally:
+        fallback_path.unlink(missing_ok=True)

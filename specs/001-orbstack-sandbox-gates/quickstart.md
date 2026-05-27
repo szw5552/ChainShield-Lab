@@ -206,7 +206,7 @@ Demo config 啟用 Worker provider 時：
 
 預期 evidence：
 
-- CLI 產生 sanitized `reports/worker-task-packet.json`，只包含 artifact references、evidence checklist 與 request metadata。
+- CLI 產生 sanitized run-specific task packet（格式為 `reports/worker-task-packet-<run_id>.json`），只包含 artifact references、evidence checklist 與 request metadata；若寫入被安全檢查拒絕，invocation 必須標示 `task_packet_path="in-memory"`，不得指向舊檔。
 - Nemotron 3 Nano Worker 只產生 worker evidence summary，不直接執行 shell command，也不裁決 `allow`/`deny`。
 - 成功的 worker evidence summary 必須包含 `finding_status`，且值只能是 `clear`、`concern` 或 `inconclusive`；只有 `clear` 可在 deterministic gate 皆通過時支援 `allow`，`concern` 或 `inconclusive` 只能阻止 `allow` 並導向 `manual_review`，不得直接形成 `deny`。
 - Nemotron API timeout、401/403、429、5xx 或 response 無法解析時，系統產生 provider failure evidence，並建立 Codex/Claude subagent fallback packet。
@@ -328,5 +328,5 @@ Phase 4 手動 sandbox 驗證路徑（當本機缺少 OpenShell/NemoClaw 或 liv
   1. `nemotron_api`：`failed`，`missing_evidence=["nvidia_api_key"]`，error 為 sanitized `NVIDIA_API_KEY unavailable`。
   2. `codex_subagent`：`failed`，提示需使用 `.agents/skills/chainshield-worker/SKILL.md` 進行本地 manual handoff。
   3. `claude_subagent`：`failed`，提示需使用 `.agents/skills/chainshield-worker/SKILL.md` 進行本地 manual handoff。
-- CLI 產生 sanitized `reports/worker-task-packet.json`，只包含 artifact refs、evidence checklist、request metadata 與「不得執行 scanner/sandbox/shell/npm lifecycle」安全界線。
+- CLI 產生 sanitized run-specific task packet（格式為 `reports/worker-task-packet-<run_id>.json`），只包含 artifact refs、evidence checklist、request metadata 與「不得執行 scanner/sandbox/shell/npm lifecycle」安全界線；不得重用既有 `reports/worker-task-packet.json` 舊檔作為本次 evidence。
 - Provider unavailable evidence 只可支援 `manual_review`；不得覆寫 Snyk/Socket/OpenShell deterministic gate，也不得直接形成 `allow` 或 `deny`。

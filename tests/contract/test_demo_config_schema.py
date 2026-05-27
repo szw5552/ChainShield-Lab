@@ -1,4 +1,5 @@
 import json
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -45,6 +46,13 @@ def test_valid_demo_config_schema_and_model(tmp_path):
     assert isinstance(parsed, DemoConfig)
     assert parsed.request_id == "REQ-foundation"
     assert parsed.sandbox_demo_override_enabled is False
+
+
+def test_jsonschema_is_runtime_dependency_not_test_only():
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+
+    assert "jsonschema>=4.21" in pyproject["project"]["dependencies"]
+    assert "jsonschema>=4.21" not in pyproject["project"]["optional-dependencies"]["test"]
 
 
 def test_sandbox_demo_override_requires_a_reason():

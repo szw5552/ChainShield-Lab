@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import Any
 
 from .artifacts import ArtifactWriteError, atomic_write_text, render_markdown_summary, sanitize_text, write_json_artifact
-from .config import ConfigValidationError, DemoConfig, build_run_id
+from .config import ConfigValidationError, DemoConfig, build_run_id, validate_output_path
+from .schemas import REPO_ROOT
 from .sandbox import run_sandbox
 from .scanners import run_scanners
 from .supervisor import SupervisorDecision, decide_static_gates
@@ -24,10 +25,17 @@ def _safe_outputs_from_raw_config(path: Path) -> dict[str, str | None]:
     outputs = raw.get("outputs") if isinstance(raw, dict) else None
     if not isinstance(outputs, dict):
         return {"decision_json": "reports/manual-review-invalid-config.json", "markdown_summary": None}
-    return {
-        "decision_json": outputs.get("decision_json") or "reports/manual-review-invalid-config.json",
-        "markdown_summary": outputs.get("markdown_summary"),
-    }
+    decision_json = _safe_raw_output("outputs.decision_json", outputs.get("decision_json"), "reports/manual-review-invalid-config.json")
+    markdown_summary = _safe_raw_output("outputs.markdown_summary", outputs.get("markdown_summary"), None)
+    return {"decision_json": decision_json, "markdown_summary": markdown_summary}
+
+
+def _safe_raw_output(field: str, value: Any, default: str | None) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return default
+    if validate_output_path(field, value, repo_root=REPO_ROOT):
+        return default
+    return value
 
 
 def _manual_review_for_invalid_config(config_path: Path, errors: list[str]) -> dict[str, Any]:
