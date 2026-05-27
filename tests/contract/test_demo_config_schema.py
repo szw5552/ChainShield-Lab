@@ -170,3 +170,44 @@ def test_demo_config_rejects_output_collision(tmp_path):
         assert "already exists" in str(excinfo.value)
     finally:
         collision.unlink(missing_ok=True)
+
+
+@pytest.mark.parametrize(
+    "outputs, worker_output, expected_fields",
+    [
+        (
+            {"decision_json": "reports/same-artifact.json", "markdown_summary": "reports/same-artifact.json"},
+            None,
+            ("outputs.decision_json", "outputs.markdown_summary"),
+        ),
+        (
+            {"decision_json": "reports/same-worker.json", "markdown_summary": "reports/other-worker.md"},
+            "reports/same-worker.json",
+            ("outputs.decision_json", "worker_provider.output_path"),
+        ),
+        (
+            {"decision_json": "reports/other-worker.json", "markdown_summary": "reports/same-worker.md"},
+            "reports/same-worker.md",
+            ("outputs.markdown_summary", "worker_provider.output_path"),
+        ),
+    ],
+)
+def test_demo_config_rejects_output_artifact_path_collisions(outputs, worker_output, expected_fields):
+    config = dict(BASE_CONFIG)
+    config["outputs"] = outputs
+    if worker_output:
+        config["worker_provider"] = {
+            "enabled": True,
+            "primary": "nemotron_api",
+            "fallbacks": ["codex_subagent", "claude_subagent"],
+            "timeout_seconds": 60,
+            "output_path": worker_output,
+        }
+
+    with pytest.raises(ConfigValidationError) as excinfo:
+        validate_demo_config(config, config_path=Path("fixtures/configs/output-collision.json"))
+
+    message = str(excinfo.value)
+    assert "output artifact paths must be distinct" in message
+    for field in expected_fields:
+        assert field in message

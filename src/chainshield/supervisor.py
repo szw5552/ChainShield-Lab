@@ -5,10 +5,10 @@ from datetime import datetime, timezone
 from typing import Any, Iterable
 
 from .config import WorkerProviderConfig
+from .evidence import REQUIRED_OPENSHELL_EVENTS
 
 STATIC_GATES = ("snyk", "socket")
 ALLOW_SOURCE_KINDS = {"fixture", "live"}
-REQUIRED_OPENSHELL_EVENTS = {"filesystem_read", "network_egress"}
 
 
 def default_artifacts() -> dict[str, Any]:
@@ -142,7 +142,7 @@ def _openshell_sufficient(item: dict[str, Any] | None) -> tuple[bool, list[str]]
         reasons.append("OpenShell containment events are missing.")
         return False, reasons
     present = {event.get("event_type") for event in events if isinstance(event, dict) and event.get("result") == "blocked"}
-    missing = REQUIRED_OPENSHELL_EVENTS - present
+    missing = set(REQUIRED_OPENSHELL_EVENTS) - present
     for event_type in sorted(missing):
         reasons.append(f"OpenShell containment evidence missing {event_type}.")
     return not reasons, reasons

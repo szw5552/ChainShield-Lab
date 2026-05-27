@@ -12,6 +12,7 @@ from jsonschema import ValidationError
 from .schemas import REPO_ROOT, validate_contract
 
 DEFAULT_WORKER_TIMEOUT_SECONDS = 60
+# manual_review is metadata-only: runtime providers stop before this terminal sentinel.
 DEFAULT_PROVIDER_CHAIN = ["nemotron_api", "codex_subagent", "claude_subagent", "manual_review"]
 FALLBACK_ORDER_AFTER_PRIMARY_FAILURE = ["codex_subagent", "claude_subagent", "manual_review"]
 SYNTHETIC_EGRESS_TARGET = "https://chainshield-egress-test.invalid/collect"
@@ -207,13 +208,26 @@ def validate_output_path(field: str, value: str, *, repo_root: Path = REPO_ROOT)
 
 def _validate_output_collisions(raw: dict[str, Any], *, repo_root: Path) -> list[str]:
     errors: list[str] = []
+    seen: dict[Path, str] = {}
+    output_fields: list[tuple[str, str]] = []
     for field in ("decision_json", "markdown_summary"):
         value = raw.get("outputs", {}).get(field)
         if value and (repo_root / str(value)).exists():
             errors.append(f"outputs.{field}: output path already exists; use a new output path")
+        if value:
+            output_fields.append((f"outputs.{field}", str(value)))
     worker_output = raw.get("worker_provider", {}).get("output_path") if isinstance(raw.get("worker_provider"), dict) else None
     if worker_output and (repo_root / str(worker_output)).exists():
         errors.append("worker_provider.output_path: output path already exists; use a new output path")
+    if worker_output:
+        output_fields.append(("worker_provider.output_path", str(worker_output)))
+    for field, value in output_fields:
+        normalized = (repo_root / value).resolve(strict=False)
+        previous = seen.get(normalized)
+        if previous:
+            errors.append(f"{field}: output artifact paths must be distinct from {previous}")
+        else:
+            seen[normalized] = field
     return errors
 
 

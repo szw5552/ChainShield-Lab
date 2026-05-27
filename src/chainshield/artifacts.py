@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -83,7 +84,7 @@ def build_sanitized_failure_artifact(gate: str, result: SanitizeResult, *, run_i
 
 def atomic_write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     with os.fdopen(os.open(tmp, flags, 0o600), "w", encoding="utf-8") as handle:
         handle.write(text)
@@ -99,6 +100,12 @@ def write_json_artifact(path: str | Path, payload: Any) -> None:
     if not result.safe:
         raise ArtifactWriteError("refusing to save unsanitized artifact: " + ", ".join(result.reasons))
     atomic_write_text(target, text + "\n")
+
+
+def _artifact_list_line(label: str, items: list[str] | None) -> str:
+    if not items:
+        return f"- {label}: none"
+    return f"- {label}: " + ", ".join(f"`{item}`" for item in items)
 
 
 def render_markdown_summary(decision: dict[str, Any]) -> str:
@@ -139,9 +146,9 @@ def render_markdown_summary(decision: dict[str, Any]) -> str:
             "## Artifacts",
             f"- Decision JSON: `{artifacts.get('decision_json')}`",
             f"- Markdown summary: `{artifacts.get('markdown_summary')}`",
-            "- Reports: " + ", ".join(f"`{item}`" for item in artifacts.get("reports", [])) if artifacts.get("reports") else "- Reports: none",
-            "- Logs: " + ", ".join(f"`{item}`" for item in artifacts.get("logs", [])) if artifacts.get("logs") else "- Logs: none",
-            "- Worker: " + ", ".join(f"`{item}`" for item in artifacts.get("worker", [])) if artifacts.get("worker") else "- Worker: none",
+            _artifact_list_line("Reports", artifacts.get("reports")),
+            _artifact_list_line("Logs", artifacts.get("logs")),
+            _artifact_list_line("Worker", artifacts.get("worker")),
             "",
             "## Scope Disclaimer",
             "Demo-only npm supply-chain defense PoC; not a production CI/CD rollout, SOC/SIEM integration, or general malware-analysis framework.",

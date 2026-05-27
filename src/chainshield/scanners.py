@@ -61,6 +61,52 @@ def _classify_unavailable(stderr: str, exit_code: int | None) -> str:
     return "parse_or_schema_error"
 
 
+def _is_error_envelope(data: Any) -> bool:
+    if not isinstance(data, dict):
+        return False
+    if "error" in data:
+        return True
+    errors = data.get("errors")
+    return isinstance(errors, dict) or isinstance(errors, str)
+
+
+def _has_report_shape(gate: str, data: Any) -> bool:
+    if not isinstance(data, dict):
+        return False
+    if gate == "snyk":
+        return any(key in data for key in ("ok", "vulnerabilities", "issues", "dependencyCount", "packageManager"))
+    return any(key in data for key in ("healthy", "alerts", "policy", "supply_chain_risk"))
+
+
+def _nonzero_pass_is_usable(gate: str, evidence: dict[str, Any]) -> bool:
+    if gate == "snyk":
+        return evidence.get("risk_level") in {"low", "medium"}
+    return False
+
+
+def _live_unavailable_from_json_error(
+    *,
+    gate: str,
+    run_id: str,
+    command: str,
+    exit_code: int,
+    started_at: str,
+    ended_at: str,
+    stderr: str,
+    reason: str,
+) -> dict[str, Any]:
+    classification = _classify_unavailable(f"{stderr} {reason}", exit_code)
+    return manual_review_evidence(
+        gate=gate,
+        run_id=run_id,
+        source_kind="live",
+        source_path=None,
+        command=command,
+        exit_code=exit_code,
+        reasons=[f"live_unavailable: {classification}; {reason}; started_at={started_at}; ended_at={ended_at}"],
+    )
+
+
 def run_live_scanner(
     gate: str,
     command: list[str] | None = None,
@@ -116,16 +162,63 @@ def run_live_scanner(
         )
 
     if completed.returncode not in (0, None) and not data:
-        classification = _classify_unavailable(stderr, completed.returncode)
-        evidence = manual_review_evidence(
+        evidence = _live_unavailable_from_json_error(
             gate=gate,
             run_id=run_id,
-            source_kind="live",
-            source_path=None,
             command=summary,
             exit_code=completed.returncode,
-            reasons=[f"live_unavailable: {classification}; live scanner did not provide usable JSON data"],
+            started_at=started_at,
+            ended_at=ended_at,
+            stderr=stderr,
+            reason="live scanner did not provide usable JSON data",
         )
+    elif _is_error_envelope(data):
+        reason = "live scanner returned JSON error envelope"
+        classification_text = f"{stderr} {json.dumps(data, ensure_ascii=False, sort_keys=True)}"
+        if completed.returncode not in (0, None):
+            evidence = _live_unavailable_from_json_error(
+                gate=gate,
+                run_id=run_id,
+                command=summary,
+                exit_code=completed.returncode,
+                started_at=started_at,
+                ended_at=ended_at,
+                stderr=classification_text,
+                reason=reason,
+            )
+        else:
+            evidence = manual_review_evidence(
+                gate=gate,
+                run_id=run_id,
+                source_kind="live",
+                source_path=None,
+                command=summary,
+                exit_code=completed.returncode,
+                reasons=[f"parse_or_schema_error: {reason}; started_at={started_at}; ended_at={ended_at}"],
+            )
+    elif not _has_report_shape(gate, data):
+        reason = "live scanner JSON did not match a recognized report shape"
+        if completed.returncode not in (0, None):
+            evidence = _live_unavailable_from_json_error(
+                gate=gate,
+                run_id=run_id,
+                command=summary,
+                exit_code=completed.returncode,
+                started_at=started_at,
+                ended_at=ended_at,
+                stderr=stderr,
+                reason=reason,
+            )
+        else:
+            evidence = manual_review_evidence(
+                gate=gate,
+                run_id=run_id,
+                source_kind="live",
+                source_path=None,
+                command=summary,
+                exit_code=completed.returncode,
+                reasons=[f"parse_or_schema_error: {reason}; started_at={started_at}; ended_at={ended_at}"],
+            )
     elif gate == "snyk":
         evidence = normalize_snyk_report_data(
             data,
@@ -145,6 +238,17 @@ def run_live_scanner(
             command=summary,
             exit_code=completed.returncode,
             observed_at=ended_at,
+        )
+    if completed.returncode not in (0, None) and evidence.get("status") == "pass" and not _nonzero_pass_is_usable(gate, evidence):
+        evidence = _live_unavailable_from_json_error(
+            gate=gate,
+            run_id=run_id,
+            command=summary,
+            exit_code=completed.returncode,
+            started_at=started_at,
+            ended_at=ended_at,
+            stderr=stderr,
+            reason="live scanner exited non-zero without deny findings",
         )
     evidence["reasons"].append(f"live scanner timing: started_at={started_at}; ended_at={ended_at}")
     return evidence

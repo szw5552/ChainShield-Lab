@@ -65,6 +65,7 @@ def test_live_snyk_empty_stdout_with_failure_requires_manual_review_and_fixture_
     assert live["status"] == "manual_review"
     assert live["exit_code"] == 2
     assert any("live_unavailable" in reason for reason in live["reasons"])
+    assert any("auth_or_network_unavailable" in reason for reason in live["reasons"])
 
     results = scanners.run_scanners(
         scanner_mode={"snyk": "live", "socket": "skip"},
@@ -75,6 +76,44 @@ def test_live_snyk_empty_stdout_with_failure_requires_manual_review_and_fixture_
 
     assert results[0]["status"] == "pass"
     assert any("live_unavailable fallback used fixture evidence" in reason for reason in results[0]["reasons"])
+
+
+@pytest.mark.parametrize("gate", ["snyk", "socket"])
+def test_live_scanner_nonzero_json_error_requires_manual_review_and_fixture_fallback(gate):
+    def runner(command, **kwargs):
+        return subprocess.CompletedProcess(command, 2, stdout='{"error":"Not authenticated"}', stderr="")
+
+    live = scanners.run_live_scanner(gate, run_id=f"run-{gate}-json-error", runner=runner)
+
+    assert live["status"] == "manual_review"
+    assert live["exit_code"] == 2
+    assert any("live_unavailable" in reason for reason in live["reasons"])
+
+    results = scanners.run_scanners(
+        scanner_mode={"snyk": "skip", "socket": "skip", gate: "live"},
+        fixtures={f"{gate}_report": f"fixtures/reports/{gate}-pass.json"},
+        run_id=f"run-{gate}-json-error",
+        runner=runner,
+    )
+
+    assert results[0]["status"] == "pass"
+    assert any("live_unavailable fallback used fixture evidence" in reason for reason in results[0]["reasons"])
+
+
+def test_live_socket_nonzero_policy_report_denies():
+    def runner(command, **kwargs):
+        return subprocess.CompletedProcess(
+            command,
+            1,
+            stdout='{"healthy":true,"policy":{"violations":[{"name":"Install scripts require review"}]}}',
+            stderr="",
+        )
+
+    evidence = scanners.run_live_scanner("socket", run_id="run-socket-policy", runner=runner)
+
+    assert evidence["status"] == "deny"
+    assert evidence["exit_code"] == 1
+    assert any("policy" in reason.lower() for reason in evidence["reasons"])
 
 
 def test_live_scanner_runs_in_configured_poc_app_directory():

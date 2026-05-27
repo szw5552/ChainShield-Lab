@@ -93,8 +93,10 @@ def _evidence_hash(config: DemoConfig) -> str:
     for key, value in sorted(config.fixtures.items()):
         digest.update(str(key).encode("utf-8"))
         digest.update(str(value).encode("utf-8"))
-        if value and Path(value).exists() and Path(value).is_file():
-            digest.update(Path(value).read_bytes())
+        if value:
+            fixture_path = REPO_ROOT / value
+            if fixture_path.exists() and fixture_path.is_file():
+                digest.update(fixture_path.read_bytes())
     return digest.hexdigest()[:16]
 
 
@@ -194,6 +196,7 @@ def evaluate(args: argparse.Namespace) -> int:
 
     sandbox_evidence = None
     combined_results = list(scanner_results)
+    # Static deny is terminal; --sandbox-only cannot turn a denied install into sandbox evidence.
     if sandbox_only and not _sandbox_requested(config) and static_decision.decision != "deny":
         sandbox_evidence = _sandbox_only_missing_evidence(run_id=run_id)
         combined_results = [*scanner_results, sandbox_evidence]
