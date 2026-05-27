@@ -110,6 +110,7 @@ def build_agent_invocation(
     if not output_safety.safe:
         status = "manual_review"
         finding_status = "inconclusive"
+        output_artifact_path = None
         clean_observations = []
         clean_errors = ["worker_output_sanitization_failed: " + ", ".join(output_safety.reasons)]
         missing_evidence = list(dict.fromkeys([*(missing_evidence or []), "worker_output_sanitization"]))

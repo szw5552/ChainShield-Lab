@@ -189,6 +189,7 @@ def test_worker_provider_sanitizes_unsafe_provider_text(tmp_path):
         invocation_text = json.dumps(invocations, ensure_ascii=False)
         assert invocations[-1]["status"] == "manual_review"
         assert invocations[-1]["finding_status"] == "inconclusive"
+        assert invocations[-1]["output_artifact_path"] is None
         assert invocations[-1]["observations"] == []
         assert any("worker_output_sanitization" in item for item in invocations[-1]["missing_evidence"])
         assert "OPENSSH PRIVATE KEY" not in invocation_text
