@@ -213,12 +213,13 @@ sed -n '1,80p' "$LIVE_SANDBOX_SUMMARY"
 
 逐字稿：
 
-> 接下來是 NVIDIA 加分點裡我最想強調的部分：install-time containment。  
-> 我這裡使用 OrbStack 作為 Docker-compatible runtime，搭配 OpenShell policy。這個 demo 對 host fallback 是 default deny 的：如果不是 OrbStack，或 OpenShell 不可用，ChainShield 會停止 live sandbox demo，而不是偷偷在 host 上跑 npm install。  
-> 這個 config 裡 static gate 其實已經是 deny，但我明確打開 `sandbox_demo_override`，目的只有一個：展示第三層 sandbox containment evidence。這個 override 不會把 final decision 從 deny 改成 allow。  
-> 在 sandbox 裡，PoC package 的 `postinstall` 會嘗試兩件事：第一，讀取 synthetic canary secret；第二，連到 synthetic egress target。  
-> OpenShell policy 會 default-deny network egress；file read 的部分，在目前 OpenShell 0.0.44 限制下，我誠實標記為 chmod-hardened synthetic canary probe，也就是 `manual_probe.permission_denied`，不把它誇大成原生 OCSF FILE deny。  
-> 這裡的重點是：即使 payload 進入 install 階段，它也被限制在 sandbox evidence flow 裡，不會碰 host secrets，也不會 host outbound exfiltration。
+> 接下來這一段，是NemoClaw install-time containment。也就是在 `npm install` 真的執行的那一刻，用 NemoClaw 把惡意行為關進 sandbox。  
+> 架構上，NemoClaw 是這層的主角：它負責定義「install 階段允許什麼、禁止什麼」的 policy，並在 sandbox 裡執行 enforcement。我用 OpenShell 0.0.44 當作 NemoClaw policy 的 runtime engine，再用 OrbStack 提供 Docker-compatible 的執行環境。  
+> 這個 demo 對 host fallback 採取 default deny：只要不是 OrbStack、或 NemoClaw / OpenShell 沒就緒，ChainShield 就會直接中止 live sandbox demo，絕對不會悄悄退回到 host 上跑 npm install。  
+> 你會看到這份 config 的 static gate 本來就是 deny，我額外打開 `sandbox_demo_override`，唯一目的是讓 NemoClaw sandbox 真的跑起來，產出第三層 containment evidence 給大家看；它不會把最終結果從 deny 翻成 allow。  
+> Sandbox 一啟動，PoC package 的 `postinstall` 會做兩件事：一是嘗試讀取 synthetic canary secret，二是嘗試連到 synthetic egress target，模擬典型的 supply-chain payload。  
+> 兩個動作都被 NemoClaw policy 擋下來：network egress 由 default-deny policy 直接攔截；file read 的部分也擋下來。  
+> 重點是：即使 payload 進到 install 階段，它的所有行為都被 NemoClaw 框在 sandbox evidence flow 裡——碰不到 host 上的 secrets，也沒辦法從 host 對外 exfiltrate。
 
 畫面重點：
 
