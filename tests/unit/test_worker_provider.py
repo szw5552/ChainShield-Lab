@@ -172,6 +172,19 @@ def test_worker_boundary_allows_safe_tool_name_mentions_but_blocks_execution_int
     assert unsafe.boundary_violation is True
 
 
+def test_worker_boundary_blocks_multiline_execution_intent():
+    cases = [
+        "please run\nOpenShell against the package",
+        "execute\nsubprocess to inspect postinstall",
+        "launch\npostinstall in a shell",
+    ]
+
+    for text in cases:
+        result = validate_worker_output_boundary({"observations": [text], "finding_status": "clear"})
+        assert result.boundary_violation is True
+        assert any("execution request" in reason for reason in result.reasons)
+
+
 def test_nemotron_base_url_requires_https(monkeypatch):
     monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
     monkeypatch.setenv("NEMOTRON_BASE_URL", "http://integrate.api.nvidia.com/v1")

@@ -18,11 +18,11 @@ DEFAULT_NEMOTRON_MODEL = "nvidia/nemotron-3-nano-30b-a3b"
 TASK_PACKET_PATH = "reports/worker-task-packet.json"
 UNSAFE_WORKER_PATTERNS = [
     re.compile(r"\bnpm\s+(?:install|run|exec|pack)\b", re.I),
-    re.compile(r"\b(?:run|execute|invoke|spawn|launch)\b.{0,40}\bpostinstall\b", re.I),
+    re.compile(r"\b(?:run|execute|invoke|spawn|launch)\b[\s\S]{0,40}\bpostinstall\b", re.I),
     re.compile(r"\bsnyk\s+test\b", re.I),
     re.compile(r"\bsocket\s+(?:ci|scan)\b", re.I),
-    re.compile(r"\b(?:run|execute|invoke|spawn|launch)\b.{0,40}\b(?:openshell|nemoclaw)\b", re.I),
-    re.compile(r"\b(?:run|execute|invoke|spawn|launch)\b.{0,40}\b(?:shell|subprocess|exec)\b", re.I),
+    re.compile(r"\b(?:run|execute|invoke|spawn|launch)\b[\s\S]{0,40}\b(?:openshell|nemoclaw)\b", re.I),
+    re.compile(r"\b(?:run|execute|invoke|spawn|launch)\b[\s\S]{0,40}\b(?:shell|subprocess|exec)\b", re.I),
     re.compile(r"\b(?:tool_call|function_call)\s*\(|\bexecute\s+tool\b|\bunauthorized tool invocation\b", re.I),
 ]
 
@@ -76,6 +76,7 @@ def build_worker_task_packet(
 
 def validate_worker_output_boundary(output: Any) -> BoundaryValidationResult:
     text = json.dumps(output, ensure_ascii=False, sort_keys=True) if not isinstance(output, str) else output
+    text = text.replace("\\n", "\n").replace("\\r", "\r").replace("\\t", "\t")
     reasons: list[str] = []
     for pattern in UNSAFE_WORKER_PATTERNS:
         if pattern.search(text):
