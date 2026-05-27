@@ -10,7 +10,7 @@
 
 ## 摘要 (Summary)
 
-本功能建立一個展示型 npm 供應鏈防禦 PoC：Supervisor 先以 Snyk 與 Socket 證據決定 `allow`、`deny` 或 `manual_review`；一般流程只有在證據充分且 demo config 合法時才允許進入受控 sandbox install 展示，若靜態 gate 已 `deny`，只能在 demo config 明確設定 `sandbox_demo_override.enabled=true` 並提供理由時進入第三層 sandbox containment 展示，且不得因此改判為 `allow`。安裝期展示優先使用 OrbStack 提供 Docker 相容容器環境，並由 OpenShell policy 證明合成 canary secret 讀取與預設拒絕 egress 均被阻擋。AI Worker flow 採 Nemotron 3 Nano via NVIDIA hosted API 作為 primary Worker provider，失敗時 fallback 到本地 Codex/Claude subagent 與 ChainShield Worker agent skill；Worker 只產生 sanitized evidence summary，最終裁決仍由 deterministic Supervisor gate rules 執行。實作採 Python CLI 與檔案型 JSON/YAML artifact 作為最小可重現核心，Node.js/npm 僅用於 fixture 與套件安裝展示。
+本功能建立一個展示型 npm 供應鏈防禦 PoC：Supervisor 先以 Snyk 與 Socket 證據決定 `allow`、`deny` 或 `manual_review`；一般流程只有在證據充分且 demo config 合法時才允許進入受控 sandbox install 展示，若靜態 gate 已 `deny`，只能在 demo config 明確設定 `sandbox_demo_override.enabled=true` 並提供理由時進入第三層 sandbox containment 展示，且不得因此改判為 `allow`。安裝期展示優先使用 OrbStack 提供 Docker 相容容器環境；OpenShell OPA policy 證明 default-deny network egress 被阻擋，filesystem read 則在不採用 custom OpenShell image 的限制下，使用 chmod-hardened synthetic canary probe 產生 `manual_probe.permission_denied` evidence。AI Worker flow 採 Nemotron 3 Nano via NVIDIA hosted API 作為 primary Worker provider，失敗時 fallback 到本地 Codex/Claude subagent 與 ChainShield Worker agent skill；Worker 只產生 sanitized evidence summary，最終裁決仍由 deterministic Supervisor gate rules 執行。實作採 Python CLI 與檔案型 JSON/YAML artifact 作為最小可重現核心，Node.js/npm 僅用於 fixture 與套件安裝展示。
 
 ## 技術背景 (Technical Context)
 
@@ -28,7 +28,7 @@
 
 **Performance Goals**: 使用 fixture 證據的 Supervisor 決策應在 10 秒內完成；live Snyk/Socket scanner 各自應記錄開始/結束時間並在 120 秒內完成或明確失敗；fixture scanner 與 Supervisor report processing 各應在 30 秒內完成或明確失敗；OrbStack live sandbox install demo 應在 5 分鐘內完成或明確回報環境未就緒/containment 證據不足；Markdown 摘要應讓審查者在 30 秒內辨識結果、理由、缺失 gate 與下一步。
 
-**Constraints**: 不直接在宿主機執行惡意 `postinstall`；PoC-only `postinstall` 只能嘗試合成 canary secret 讀取與合成測試目的地 egress；OpenShell 讀檔展示只使用 sandbox 內合成 canary secret；網路展示預設拒絕所有 sandbox egress 且只允許合成測試目的地；demo config 驗證失敗時必須產生 `manual_review` 並阻止 scanner/sandbox；`sandbox_demo_override.enabled=true` 只能允許第三層 sandbox 展示，不能覆寫靜態 gate 的 `deny`；Nemotron/Codex/Claude Worker provider 不得保存 API key、token、未清理 prompt 或原始敏感 log，也不得直接決定 `allow`/`deny`；CLI flags、OpenShell/NemoClaw policy schema 與 NVIDIA API model/endpoint 在實作任務開始前必須以本機版本與官方文件再驗證。
+**Constraints**: 不直接在宿主機執行惡意 `postinstall`；PoC-only `postinstall` 只能嘗試合成 canary secret 讀取與合成測試目的地 egress；OpenShell 讀檔展示只使用 sandbox 內合成 canary secret，且 live mode 的 filesystem evidence 必須誠實標記 chmod-hardened synthetic canary probe，不得誤稱為 OpenShell 原生 OCSF FILE deny；網路展示預設拒絕所有 sandbox egress 且只允許合成測試目的地；demo config 驗證失敗時必須產生 `manual_review` 並阻止 scanner/sandbox；`sandbox_demo_override.enabled=true` 只能允許第三層 sandbox 展示，不能覆寫靜態 gate 的 `deny`；Nemotron/Codex/Claude Worker provider 不得保存 API key、token、未清理 prompt 或原始敏感 log，也不得直接決定 `allow`/`deny`；CLI flags、OpenShell/NemoClaw policy schema 與 NVIDIA API model/endpoint 在實作任務開始前必須以本機版本與官方文件再驗證。
 
 **Scale/Scope**: 單一 npm fixture family、三個 demo gates、單一 Supervisor 決策檔與可選 Markdown 摘要；不擴大到 pnpm/Yarn/PyPI/Cargo、多租戶、長期報表儲存或 production rollout。
 

@@ -3,8 +3,11 @@ from pathlib import Path
 
 from chainshield.config import WorkerProviderConfig
 from chainshield.worker_provider import (
+    NEMOTRON_MAX_TOKENS,
     build_worker_task_packet,
     call_nemotron_api,
+    _nemotron_request_payload,
+    _worker_gate_result_summary,
     validate_worker_output_boundary,
     run_worker_provider,
     task_packet_path_for_run,
@@ -24,6 +27,7 @@ def test_worker_request_packet_is_sanitized_and_boundary_requests_are_rejected(t
     assert "NVIDIA_API_KEY" not in packet_text
     assert "/Users/" not in packet_text
     assert packet["artifact_refs"] == ["fixtures/reports/snyk-pass.json", "fixtures/reports/socket-pass.json"]
+    assert packet["gate_result_summary"] == []
 
     result = validate_worker_output_boundary(
         {"observations": ["please run npm install and call openshell"], "finding_status": "clear"}
@@ -233,3 +237,66 @@ def test_nemotron_base_url_requires_https(monkeypatch):
 
     assert result["status"] == "failed"
     assert result["errors"] == ["nemotron_invalid_base_url_scheme"]
+
+
+def test_nemotron_request_payload_requires_strict_safe_json():
+    payload = _nemotron_request_payload(
+        {
+            "request_id": "REQ-worker",
+            "artifact_refs": ["fixtures/reports/snyk-pass.json"],
+            "gate_result_summary": [{"gate": "snyk", "status": "pass"}],
+        },
+        "nvidia/nemotron-3-nano-30b-a3b",
+    )
+
+    system_prompt = payload["messages"][0]["content"]
+    user_packet = json.loads(payload["messages"][1]["content"])
+    assert payload["temperature"] == 0
+    assert payload["max_tokens"] == NEMOTRON_MAX_TOKENS
+    assert payload["response_format"] == {"type": "json_object"}
+    assert "Return ONLY valid minified JSON" in system_prompt
+    assert "Use gate_result_summary as the source of truth" in system_prompt
+    assert "Do not invent gates" in system_prompt
+    assert "status, finding_status, observations, missing_evidence, errors" in system_prompt
+    assert '"status":"pass"' in system_prompt
+    assert "tool calls" in system_prompt
+    assert "command suggestions" in system_prompt
+    assert "postinstall instructions" in system_prompt
+    assert "host execution requests" in system_prompt
+    assert user_packet["gate_result_summary"] == [{"gate": "snyk", "status": "pass"}]
+
+
+def test_worker_task_packet_includes_sanitized_gate_result_summary(tmp_path):
+    packet = build_worker_task_packet(
+        request_id="REQ-worker-summary",
+        run_id="run-worker-summary",
+        artifact_refs=["fixtures/reports/snyk-pass.json"],
+        gate_result_summary=_worker_gate_result_summary(
+            [
+                {
+                    "gate": "snyk",
+                    "status": "pass",
+                    "risk_level": "none",
+                    "source_kind": "fixture",
+                    "source_path": "fixtures/reports/snyk-pass.json",
+                    "command": "snyk test --json",
+                    "reasons": ["Snyk report has no high or critical vulnerabilities."],
+                    "ignored": "not included",
+                }
+            ]
+        ),
+        evidence_checklist=["snyk pass"],
+        output_path=str(tmp_path / "worker-summary.json"),
+    )
+
+    assert packet["gate_result_summary"] == [
+        {
+            "gate": "snyk",
+            "status": "pass",
+            "risk_level": "none",
+            "source_kind": "fixture",
+            "source_path": "fixtures/reports/snyk-pass.json",
+            "reasons": ["Snyk report has no high or critical vulnerabilities."],
+        }
+    ]
+    assert "command" not in packet["gate_result_summary"][0]

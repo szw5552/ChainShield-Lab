@@ -113,7 +113,7 @@
 
 **Fallback 規則**: live Snyk/Socket unavailable 時，若 demo config 提供 sanitized fixture report，Supervisor 可使用 fixture evidence 完成決策並在 evidence reasons 標示 `live_unavailable`；若缺少 fixture 或 scanner mode 為 `skip` 且無其他明確 deny，輸出 `manual_review` 並將對應 gate 放入 `missing_gates`。
 
-### OpenShell / NemoClaw CLI、policy schema 與 OrbStack readiness
+### OpenShell / NemoClaw CLI、policy schema 與 OrbStack readiness（Phase 2 初始紀錄）
 
 **本機確認日期**: 2026-05-27T04:19:06+08:00。
 
@@ -131,9 +131,39 @@
 - OpenShell policy schema reference: <https://docs.nvidia.com/openshell/reference/policy-schema>
 - OpenShell network policy tutorial: <https://docs.nvidia.com/openshell/latest/get-started/tutorials/first-network-policy>
 
-**Policy schema 觀察**: OpenShell policy YAML top-level 包含 `version`、`filesystem_policy`、`landlock`、`process`、`network_policies`。filesystem policy path 必須為 absolute path、不得包含 `..` traversal，且未列入 read-only/read-write 的 path 應視為不可存取；network policies 用於定義 binary 可連線目標，因此本 PoC policy 應 default-deny egress，並只允許合成測試目的地的阻擋證據被記錄。由於本機未安裝 OpenShell/NemoClaw，Phase 2 不硬編 sandbox command flags，僅保留 adapter/readiness 安全失敗行為。
+**Policy schema 觀察**: OpenShell policy YAML top-level 包含 `version`、`filesystem_policy`、`landlock`、`process`、`network_policies`。filesystem policy path 必須為 absolute path、不得包含 `..` traversal，且未列入 read-only/read-write 的 path 應視為不可存取；network policies 用於定義 binary 可連線目標，因此本 PoC policy 應 default-deny egress，並只允許合成測試目的地的阻擋證據被記錄。Phase 2 初始環境尚未安裝 OpenShell/NemoClaw，因此當時不硬編 sandbox command flags，僅保留 adapter/readiness 安全失敗行為；後續 OpenShell 0.0.44 live 行為以本節下方補充紀錄為準。
 
 **Host fallback 禁止**: live sandbox readiness 需要 OrbStack/Docker-compatible runtime 與 OpenShell/NemoClaw 皆可用；缺任一項時輸出 `manual_review`，不得執行 host `npm install`，不得改用未經 spec 明確授權的一般 Docker runtime。
+
+### OpenShell 0.0.44 live sandbox 驗證補充
+
+**本機確認日期**: 2026-05-27T17:19:07Z。
+
+**背景**: Phase 2 初始紀錄顯示本機當時未安裝 OpenShell/NemoClaw，因此只保留 readiness failure 與 fixture fallback 設計。後續安裝 NemoClaw/OpenShell 後，本輪以 OpenShell `0.0.44`、OrbStack Docker runtime 與 `policies/openshell-npm-install.yaml` 驗證 live sandbox 行為；以下紀錄 supersede Phase 2 對 OpenShell CLI 不可用的實作限制，但不改變 host fallback 禁止原則。
+
+**本機命令與觀察結果**:
+
+| Tool / 行為 | Command summary | Observed behavior | Decision impact |
+|-------------|-----------------|-------------------|-----------------|
+| OpenShell version | `openshell --version` | `openshell 0.0.44` | live sandbox mode 可執行；仍需 OrbStack readiness 與 host fallback 禁止。 |
+| Create/upload flags | `openshell sandbox create --help` | `--upload <LOCAL_PATH>[:<SANDBOX_PATH>]` 存在，但本版本不接受多個 `--upload`。 | Demo wrapper 必須先建立單一 bundle，再用單一 `--upload` 上傳。 |
+| Exec flags | `openshell sandbox exec --help` | 支援 `--name`、`--no-tty`、`--workdir` 與 command args；`sandbox connect -- sh ...` 不適用。 | live log collection 與 canary probe 使用 `sandbox exec --name ... --no-tty -- sh -lc ...`。 |
+| `/workspace` upload | `--upload <fixtures>:/workspace` | `mkdir: cannot create directory '/workspace': Permission denied`。 | 不使用 `/workspace` 作為 live demo path。 |
+| 多個 upload | 多次 `--upload` | `the argument '--upload <UPLOAD>' cannot be used multiple times`。 | 必須使用單一 bundle。 |
+| `/tmp` upload | `--upload <bundle>:/tmp` | 成功，且 OpenShell proxy mode baseline 會放行 `/tmp`。 | 可作 demo bundle 目的地，但放在 `/tmp` 的 canary 不會自然觸發 OpenShell filesystem deny。 |
+| `/sandbox` upload | `--upload <canary>:/sandbox/...` | 成功，但 `/sandbox` 為 baseline 可讀區，canary 可被讀出。 | 不可宣稱 `/sandbox` 內 canary 形成 OpenShell policy file-read deny。 |
+| `/home/sandbox` / `/var/tmp` upload | `--upload <canary>:/home/sandbox/...` / `/var/tmp/...` | upload 失敗，permission denied。 | 不採用作為免 custom image 的 canary 放置點。 |
+| Default-deny egress | live `npm install --ignore-scripts=false --install-links` | OCSF `NET:OPEN [MED] DENIED` 觀察到 `registry.npmjs.org:443` 與 `chainshield-egress-test.invalid:443`。 | `network_egress` evidence 可由 OpenShell OPA deny log 滿足。 |
+| Filesystem read fallback | sandbox 內 `chmod 000 <synthetic canary>` 後以 postinstall / exec probe 讀取 | 讀取失敗可轉為 `filesystem_read` evidence，`policy_rule_id="manual_probe.permission_denied"`。 | 本 PoC 不採用 custom OpenShell image；live filesystem evidence 以 chmod-hardened synthetic canary probe 誠實標記，不宣稱為原生 OCSF FILE deny。 |
+
+**成功 run 紀錄**: `run-20260527T171906573747Z-2f26c3f6ae03` 的 OpenShell gate 為 `pass`，包含三筆 `network_egress` deny event 與一筆 `filesystem_read` event；filesystem event 的 `policy_rule_id` 為 `manual_probe.permission_denied`，artifact path 為 runtime output `reports/sandbox/openshell-live-run-20260527T171906573747Z-2f26c3f6ae03.log`，不得提交到 git。
+
+**安全結論**:
+
+- Live sandbox demo 不使用 custom OpenShell image。
+- Host `npm install` 與 host `postinstall` 仍禁止。
+- Synthetic canary stdout 不得保存；若 canary probe 意外成功，只能保存 redacted 訊號並輸出 `manual_review`。
+- `sandbox_demo_override` 只允許 containment demonstration；即使 OpenShell gate `pass`，Snyk/Socket static `deny` 仍維持最終 `deny`。
 
 ### NVIDIA Nemotron hosted API 驗證
 

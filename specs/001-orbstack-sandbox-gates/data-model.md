@@ -84,7 +84,7 @@
 
 - Snyk high/critical vulnerability evidence 必須正規化為 `status=deny`。
 - Socket `unhealthy`、organization policy violation、malware/supply-chain risk，或可判定的 policy failure exit code 必須正規化為 `status=deny`；report 無法解析、缺少必要欄位或 exit code 無法歸類時必須正規化為 `status=manual_review`。
-- OpenShell containment 只有同時具備 file read block 與 network egress block evidence 時才可視為 pass。
+- OpenShell containment 只有同時具備 file read block 與 network egress block evidence 時才可視為 pass；live `network_egress` 應由 OpenShell OPA deny log 支援，live `filesystem_read` 可由 chmod-hardened synthetic canary probe 支援，且 `policy_rule_id` 必須標示 `manual_probe.permission_denied`。
 - 缺少必要欄位、格式錯誤或互相衝突時，若沒有其他 gate 明確 deny，Supervisor 應輸出 `manual_review`。
 
 ## 實體：Worker Provider
@@ -153,7 +153,9 @@
 - `network_policy_ready`: boolean。
 - `host_protection_ready`: boolean。
 - `read_block_observed`: boolean。
+- `read_block_mechanism`: enum `openshell_policy | manual_probe_permission_denied | fixture_log | none`；live mode 若使用 chmod-hardened synthetic canary probe，必須記錄為 `manual_probe_permission_denied`，不得誤稱為 `openshell_policy`。
 - `egress_block_observed`: boolean。
+- `egress_block_mechanism`: enum `openshell_opa_deny | fixture_log | none`。
 - `started_at`: ISO-8601 timestamp 或 null。
 - `completed_at`: ISO-8601 timestamp 或 null。
 
@@ -161,7 +163,8 @@
 
 - `runtime_ready=false` 或 `openshell_ready=false` 時，不得執行 live sandbox install。
 - `host_protection_ready` 必須確認沒有真實 secret、SSH key、cloud profile 或 host env path 被納入 fixture/report。
-- containment pass 必須同時滿足 `read_block_observed=true` 與 `egress_block_observed=true`。
+- containment pass 必須同時滿足 `read_block_observed=true` 與 `egress_block_observed=true`，且對應 mechanism 不得為 `none`。
+- 若 canary read probe 意外成功，artifact 只能保存 redacted 訊號，`read_block_observed=false`，且 Supervisor 必須輸出 `manual_review` 或保留既有 static `deny`。
 
 ## 實體：Supervisor 決策 (Supervisor Decision)
 

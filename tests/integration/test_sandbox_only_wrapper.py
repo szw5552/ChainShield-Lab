@@ -112,3 +112,59 @@ def test_sandbox_only_requires_configured_sandbox_evidence(tmp_path):
         assert any("--sandbox-only requires sandbox_mode" in reason for reason in decision["primary_reasons"])
     finally:
         decision_path.unlink(missing_ok=True)
+
+
+def test_wrapper_rotates_existing_output_paths_for_reruns(tmp_path):
+    decision_path = Path("reports/test-wrapper-rerun-decision.json")
+    summary_path = Path("reports/test-wrapper-rerun-summary.md")
+    rotated_paths: list[Path] = []
+    decision_path.parent.mkdir(exist_ok=True)
+    decision_path.write_text('{"stale": true}', encoding="utf-8")
+    summary_path.write_text("stale", encoding="utf-8")
+    config = {
+        "version": 1,
+        "request_id": "REQ-wrapper-rerun",
+        "package_manager": "npm",
+        "scanner_mode": {"snyk": "fixture", "socket": "skip"},
+        "sandbox_mode": "disabled",
+        "fixtures": {
+            "poc_app": "fixtures/poc-app",
+            "malicious_package": "fixtures/malicious-poc-pkg",
+            "snyk_report": "fixtures/reports/snyk-pass.json",
+            "socket_report": None,
+            "openshell_log": None,
+            "canary_secret": "fixtures/canary/canary-secret.txt",
+        },
+        "outputs": {"decision_json": str(decision_path), "markdown_summary": str(summary_path)},
+        "safety": {
+            "synthetic_egress_target": "https://chainshield-egress-test.invalid/collect",
+            "sandbox_demo_override": {"enabled": False, "reason": None},
+        },
+    }
+    config_path = tmp_path / "wrapper-rerun.json"
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+
+    try:
+        completed = subprocess.run(
+            [sys.executable, "scripts/run-demo.py", "--config", str(config_path)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        assert completed.returncode == 2
+        decision = json.loads(completed.stdout)
+        rotated_decision = Path(decision["artifacts"]["decision_json"])
+        rotated_summary = Path(decision["artifacts"]["markdown_summary"])
+        rotated_paths.extend([rotated_decision, rotated_summary])
+        assert rotated_decision != decision_path
+        assert rotated_summary != summary_path
+        assert rotated_decision.exists()
+        assert rotated_summary.exists()
+    finally:
+        decision_path.unlink(missing_ok=True)
+        summary_path.unlink(missing_ok=True)
+        for path in rotated_paths:
+            path.unlink(missing_ok=True)
+        for generated in tmp_path.glob("wrapper-rerun-*.json"):
+            generated.unlink(missing_ok=True)

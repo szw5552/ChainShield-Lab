@@ -23,7 +23,7 @@
 - Q: 當 demo config 驗證失敗時，Supervisor 應產生哪種結果？ → A: 產生 manual_review 決策檔，並阻止任何 scanner 或 sandbox 執行。
 - Q: OpenShell 網路限制展示應採用哪種 egress policy？ → A: 預設拒絕所有 sandbox egress，惡意 fixture 只能嘗試連到 canonical synthetic egress target 並被阻擋。
 - Q: 當某個 gate 已有明確 `deny` 證據，但其他必要 gate 證據缺失時，Supervisor 應如何裁決？ → A: 輸出 deny，並在摘要標示其他必要 gate 證據缺失。
-- Q: 已執行 sandbox install demo 時，OpenShell containment 應需要哪些證據才算通過？ → A: 同時具備檔案讀取阻擋證據與網路 egress 阻擋證據。
+- Q: 已執行 sandbox install demo 時，OpenShell containment 應需要哪些證據才算通過？ → A: 同時具備檔案讀取阻擋證據與網路 egress 阻擋證據；live mode 中 egress 由 OpenShell OPA deny log 佐證，filesystem read 可由 chmod-hardened synthetic canary probe 以 `manual_probe.permission_denied` 標記。
 - Q: 若靜態 Snyk/Socket gate 已產生 `deny`，是否可為了展示第三層防線繼續 sandbox install demo？ → A: 只能透過 demo config 明確設定 `sandbox_demo_override.enabled=true` 並提供理由，允許進入受控 sandbox 展示；不得將原本的 `deny` 改判為 `allow`。
 - Q: `--sandbox-only` 是否可以跳過 demo config 驗證、static gate 判讀或 sandbox demo override 規則？ → A: 不可以。`--sandbox-only` 僅代表只執行受控 sandbox 展示路徑；仍必須先通過 demo config 驗證、OrbStack/OpenShell readiness、安全路徑檢查與必要的 `sandbox_demo_override` reason，且不得執行 host lifecycle script、不得將既有 static gate `deny` 改判為 `allow`。
 - Q: README/todo 提到的 Nemotron model、subagent 與 agent skill 是否納入本 feature？ → A: 納入。Nemotron 3 Nano 透過 NVIDIA hosted API 作為 primary Worker provider；若 Nemotron API 不可用，fallback 到本地 Codex/Claude subagent 與 ChainShield Worker agent skill。
@@ -45,7 +45,7 @@
 - Q: 惡意 fixture 應嘗試連線的 canonical synthetic egress target 是什麼？ → A: 使用 `https://chainshield-egress-test.invalid/collect`，此 reserved invalid domain 必須在真實外連前被 sandbox egress policy 阻擋。
 - Q: Snyk report 只有 low 或 medium 已知漏洞、且沒有 high/critical 時，Supervisor 應如何裁決 Snyk gate？ → A: 視為 Snyk gate 通過，但決策摘要必須列出 low/medium residual risk。
 - Q: Scanner 與決策報告處理的預設 runtime budget 應如何定義？ → A: 每個 live scanner 120 秒 timeout；fixture scanner 與 Supervisor report processing 各 30 秒內完成。
-- Q: 若兩個 demo run 指向同一個 output path 或 decision artifact，系統應如何處理衝突？ → A: 拒絕第二個 run，輸出 `manual_review` 並要求使用新的 output path。
+- Q: 若兩個 demo run 指向同一個 output path 或 decision artifact，系統應如何處理衝突？ → A: 底層 CLI / artifact writer 必須拒絕覆寫並輸出 `manual_review`；安全 demo wrapper 可在執行前產生 timestamp-suffixed runtime config 自動旋轉 output path，以改善重跑體驗且不削弱覆寫防護。
 - Q: 每次 安裝評估請求 / Gate 證據 / Supervisor 決策 的唯一識別規則應如何定義？ → A: 使用 repository-local `run_id`，由 demo config path、fixture identity、timestamp 與 evidence hash 組成。
 - Q: OpenShell/NemoClaw、Snyk 與 Socket CLI 旗標 / policy schema 的驗證結果應保存在哪裡？ → A: 保存於版本控管的 `research.md` 驗證紀錄，包含 command、version、observed behavior 與日期。
 - Q: 當 Worker 成功產生 sanitized evidence summary，但摘要指出非 gate 來源疑慮或可疑觀察，而 Snyk/Socket/OpenShell 必要 gate 原本皆通過時，Supervisor 應如何裁決？ → A: 輸出 `manual_review`；Worker 疑慮不能直接 `deny`，但會阻止 `allow`。
@@ -81,7 +81,7 @@
 **BDD 驗收情境**:
 
 1. **Given** 展示環境已確認具備 OrbStack 優先的容器執行能力，**When** CLI 透過 sandbox orchestration 在 sandbox 內執行受控 npm 安裝展示，**Then** 惡意 postinstall 行為只能在 sandbox 邊界內嘗試，且 OpenShell containment 只有在同時具備檔案讀取阻擋證據與網路 egress 阻擋證據時才算通過。
-2. **Given** 合成 canary secret fixture 已掛載於 sandbox/container 內、但位於 OpenShell filesystem allowlist 之外，且 postinstall 嘗試讀取該 fixture，**When** OpenShell gate 套用檔案限制，**Then** 讀取必須失敗，且產生可查詢的拒絕證據。
+2. **Given** 合成 canary secret fixture 已掛載於 sandbox/container 內，且 live demo 在不採用 custom image 的前提下先以 `chmod 000` harden 該 synthetic canary，**When** postinstall 或 sandbox exec probe 嘗試讀取該 fixture，**Then** 讀取必須失敗，且產生 `filesystem_read` containment evidence；此 live evidence 必須以 `manual_probe.permission_denied` 標記，不得誤稱為 OpenShell 原生 OCSF FILE deny。
 3. **Given** postinstall 嘗試連線到 `https://chainshield-egress-test.invalid/collect`，**When** OpenShell gate 套用預設拒絕所有 sandbox egress 的網路限制，**Then** 外連必須在任何真實網路 egress 前失敗，且產生可查詢的拒絕證據。
 4. **Given** 使用者以 `--sandbox-only` 執行 sandbox 展示，**When** demo config 驗證失敗、缺少 `sandbox_demo_override` reason、OrbStack/OpenShell readiness 失敗，或 static gate 已產生 `deny` 且未明確授權 sandbox demo override，**Then** 流程必須阻止 host lifecycle script 執行、不得跳過 static gate 判讀與安全路徑檢查，且不得輸出 `allow`。
 
@@ -112,7 +112,7 @@
 - 當沒有明確 `deny` 證據，且掃描報告格式不完整、無法解析、缺少必要欄位或證據互相衝突時，Supervisor 必須輸出 `manual_review`，並阻止安裝期展示直到證據補齊或人工覆核。
 - 當 OpenShell 沒有同時產生檔案讀取阻擋證據與網路 egress 阻擋證據時，展示必須標示 containment 證據不足，不能宣稱第三層防線成功。
 - 當 fixture、report 或暫存輸出可能包含秘密、token、SSH/cloud profile 或未遮罩 host sensitive path 時，artifact sanitizer 必須阻止保存該 artifact，Supervisor 必須產生只含 sanitized failure reason 的 `manual_review` 決策，並停止後續 scanner/sandbox 執行直到清理完成；OpenShell 讀檔阻擋展示只允許使用合成 canary secret fixture。
-- 當 demo run 指向已被其他 run 使用或已存在的 output path / decision artifact 時，系統必須拒絕新的 run、產生 `manual_review`，並要求使用新的 output path；不得覆寫既有 evidence 或 decision artifact。
+- 當 demo run 指向已被其他 run 使用或已存在的 output path / decision artifact 時，底層 CLI / artifact writer 必須拒絕覆寫並產生 `manual_review`；安全 demo wrapper 可以在呼叫 CLI 前自動旋轉 output path，但不得覆寫既有 evidence 或 decision artifact。
 - 當使用者嘗試擴大到非 npm package manager、production CI/CD 或 SOC/SIEM 整合時，本功能必須視為超出本次 PoC 範圍。
 
 ## 需求 (Requirements) *(mandatory)*
@@ -129,10 +129,10 @@
   - **FR-004d**: 當 `scanner_mode.snyk` 或 `scanner_mode.socket` 設為 `skip` 且沒有其他 gate 已明確 `deny` 時，Supervisor 必須輸出 `manual_review`，並在 `missing_gates` 標示被 skip 的必要 static gate。
   - **FR-004e**: `sandbox_demo_override` 僅能用於展示第三層 sandbox containment，不得將靜態 gate 的 `deny` 改判為 `allow`。
   - **FR-004f**: Demo config 的 fixture、policy 與輸出路徑必須通過安全路徑檢查：fixture/policy path 必須位於 repository 內的受控 fixture 或 policy 目錄；output path 必須位於 `reports/` 或 config 明確指定的 repository-local output 目錄；不得使用 parent traversal、home expansion、絕對敏感路徑、auth/token/SSH/cloud profile 檔案路徑，且不得經由 symlink 指向 repository 外部或敏感位置。
-  - **FR-004g**: 若 output path 或 decision artifact 已存在或被其他 run 使用，系統必須拒絕新的 run、產生 `manual_review`，並要求使用新的 output path，不得覆寫既有 evidence 或 decision artifact。
+  - **FR-004g**: 若 output path 或 decision artifact 已存在或被其他 run 使用，底層 CLI 與 artifact writer 必須拒絕覆寫、產生 `manual_review`，並要求使用新的 output path；`scripts/run-demo.py` 等安全 demo wrapper 可在呼叫 CLI 前產生 timestamp-suffixed runtime config 自動旋轉 output path，但不得覆寫既有 evidence 或 decision artifact。
 - **FR-005**: 系統必須只在受控 sandbox/container 流程中展示安裝期惡意 PoC，且不得在宿主機直接執行惡意 postinstall 行為；PoC-only `postinstall` script 只能執行合成 canary secret 讀取嘗試與 `https://chainshield-egress-test.invalid/collect` egress 嘗試，不得引用真實宿主機敏感路徑、真實 token、真實外部 exfiltration 目的地或 public registry 發布流程。
 - **FR-006**: 系統必須以 OrbStack-first 且唯一授權的 live sandbox Docker 相容 runtime 執行本機安裝期展示；不得在 OrbStack 不可用時改用宿主機直接執行或未經本 spec 明確授權的一般 Docker runtime。OpenShell/NemoClaw、Snyk 與 Socket CLI 旗標、版本與 policy schema 的實測結果必須保存於版本控管的 `research.md` 驗證紀錄，且每筆紀錄包含 command、version、observed behavior 與日期；若 OrbStack 不可用，必須停止 live sandbox install demo，且只允許使用已清理 fixture 與手動驗證說明作為替代展示。
-- **FR-007**: 系統必須在 OpenShell gate 中展示檔案讀取限制；惡意 fixture 只能嘗試讀取已掛載於 sandbox/container 內、但位於 OpenShell filesystem allowlist 之外的合成 canary secret fixture，且不得嘗試讀取任何真實宿主機敏感路徑，讀取失敗時必須留下可查詢證據。
+- **FR-007**: 系統必須在 OpenShell gate 中展示檔案讀取限制；惡意 fixture 只能嘗試讀取已掛載於 sandbox/container 內的合成 canary secret fixture，且不得嘗試讀取任何真實宿主機敏感路徑。Live mode 在不採用 custom OpenShell image 的前提下，必須先以 sandbox 內 `chmod 000` harden synthetic canary，再以 postinstall 嘗試與 sandbox exec probe 驗證讀取失敗；此 evidence 必須標記為 `filesystem_read` 與 `manual_probe.permission_denied`，不得宣稱為 OpenShell 原生 OCSF FILE deny。
 - **FR-008**: 系統必須在 OpenShell gate 中展示預設拒絕所有 sandbox egress 的網路外連限制；惡意 fixture 只能嘗試連到 canonical synthetic egress target `https://chainshield-egress-test.invalid/collect`，且連線嘗試必須在任何真實網路 egress 前失敗並留下可查詢證據。
 - **FR-009**: 系統必須彙整 Snyk、Socket 與必要的 OpenShell 證據，產生機器可讀 JSON 決策檔，並可選擇產生人類可讀 Markdown 摘要；輸出必須包含 repository-local `run_id`、結果、理由、證據來源、時間點與下一步建議，且 `allow` 決策至少需要 Snyk 與 Socket 皆通過；用於滿足 `allow` 的必要 gate evidence `source_kind` 必須為 `live` 或 `fixture`，不得使用 `manual_observation`；若任一必要 static gate 被 skip 且沒有其他 gate 明確 `deny`，不得輸出 `allow`；sandbox install demo 被執行時，OpenShell containment 必須同時具備檔案讀取阻擋證據與網路 egress 阻擋證據才算通過。Snyk/Socket static gate sufficiency、skip handling 與 static `deny` precedence 必須由單一 Supervisor static gate decision core 定義，其他 CLI、sandbox-only wrapper 或 sandbox demo override flow 只能呼叫該 core，不得另行實作平行判斷矩陣。
 - **FR-010**: 系統必須在無明確 `deny` 證據且必要證據缺失、格式無法解析或結果互相衝突時輸出 `manual_review`，並阻止安裝期展示直到證據補齊或人工覆核；人工覆核只能新增或修正 sanitized evidence/config，然後重新執行 Supervisor，不得直接把既有 `manual_review` 決策檔改成 `allow`；若任一 gate 已有明確 `deny` 證據，系統必須輸出 `deny` 並在摘要標示其他必要 gate 證據缺失。
@@ -149,11 +149,11 @@
 - **Worker Provider**: 表示可選的 AI Worker 執行角色；包含 provider kind、model、timeout、canonical `provider_chain`、source marker 與是否可用；canonical `provider_chain` 固定為 `nemotron_api` -> `codex_subagent` -> `claude_subagent` -> `manual_review`，其中 `fallback_order_after_primary_failure` 固定為 `codex_subagent` -> `claude_subagent` -> `manual_review`，每個 provider 嘗試的預設 timeout 為 60 秒。支援值包含 `nemotron_api`、`codex_subagent`、`claude_subagent` 與 `manual_review` fallback。
 - **Agent Invocation Evidence**: 表示 Nemotron/Codex/Claude Worker provider 的可審查 invocation 結果；包含 provider、model、status、sanitized task packet path、sanitized input artifact refs、output artifact path、`finding_status`、timeout/error、observed_at 與 sanitized marker；`finding_status` 的允許值為 `clear`、`concern` 或 `inconclusive`，且不得包含 API key、未清理 prompt/log、原始 scanner/sandbox logs 或 host sensitive path。
 - **Agent Skill**: 表示本地 subagent fallback 使用的 ChainShield Worker skill；定義 subagent 只能讀取 sanitized task packet 與 sanitized artifact reference、產生 worker evidence summary，不能讀取原始 logs、執行惡意 PoC 或做最終安全裁決；任何 Worker 或 subagent output 若要求執行 shell command、scanner、sandbox、host lifecycle script 或未授權 tool invocation，必須被視為 boundary violation evidence，且不得被採用為可執行任務。
-- **OpenShell containment evidence**: 表示 OpenShell 對安裝期行為產生的 containment 證據；至少包含 event type、blocked path 或 blocked target、policy/rule identifier、result、timestamp、artifact path、live/fixture source marker 與 sanitized marker；缺少任一必要欄位時，Supervisor 不得宣稱 OpenShell containment 通過。
+- **OpenShell containment evidence**: 表示 OpenShell sandbox 展示路徑對安裝期行為產生的 containment 證據；至少包含 event type、blocked path 或 blocked target、policy/rule identifier、result、timestamp、artifact path、live/fixture source marker 與 sanitized marker。Live `network_egress` evidence 來自 OpenShell OPA deny log；live `filesystem_read` evidence 可來自 chmod-hardened synthetic canary probe，並以 `policy_rule_id="manual_probe.permission_denied"` 誠實標記。缺少任一必要欄位時，Supervisor 不得宣稱 OpenShell containment 通過。
 - **Supervisor 決策**: 表示彙整後的 `allow`、`deny` 或 `manual_review` 結論；包含 `run_id`、主要理由、引用證據、保留風險與下一步建議；`allow` 只能由 `live` 或 `fixture` gate evidence 滿足；`manual_review` 只能透過補齊 sanitized evidence/config 並重新執行 Supervisor 轉入新決策，不支援人工直接改判為 `allow`。
 - **Sandbox 展示環境**: 表示用於安裝期展示的受控執行邊界；包含容器環境就緒狀態、檔案限制狀態、網路限制狀態與宿主機保護狀態。
 - **Demo Config**: 表示版本控管的展示設定檔；描述 fixture、scanner mode、sandbox mode、輸出路徑、可選的 sandbox demo override 理由與可選 Worker 設定；`safety.synthetic_egress_target` 必須為 canonical 值 `https://chainshield-egress-test.invalid/collect`；Worker 設定未指定時預設停用，只有 `worker_provider.enabled=true` 時才執行 Worker provider chain；且不得包含 token、憑證或機器專屬秘密；sandbox demo override 只能允許進入受控 sandbox 展示，不能覆寫 Supervisor 對 Snyk/Socket gate 的最終 `deny` 決策。Demo Config 的所有路徑欄位都必須保存為可審查的相對路徑或經驗證的 repository-local 路徑；任何無法解析、指向 repository 外部、指向敏感檔名樣式或經 symlink 逃逸的路徑，必須使 config 驗證失敗並產生 `manual_review`。
-- **展示輸出**: 表示可交付給觀眾或審查者的報告、log 摘要或決策摘要；Supervisor 決策必須至少保存為機器可讀 JSON 檔，並可選擇輸出人類可讀 Markdown 摘要；所有展示輸出必須避免包含真實秘密、憑證或未遮罩的敏感本機資訊；若 sanitizer 偵測到敏感內容，展示輸出只能保存 sanitized failure reason，不得保存原始 artifact；既有 output path 或 decision artifact 不得被後續 run 覆寫。
+- **展示輸出**: 表示可交付給觀眾或審查者的報告、log 摘要或決策摘要；Supervisor 決策必須至少保存為機器可讀 JSON 檔，並可選擇輸出人類可讀 Markdown 摘要；所有展示輸出必須避免包含真實秘密、憑證或未遮罩的敏感本機資訊；若 sanitizer 偵測到敏感內容，展示輸出只能保存 sanitized failure reason，不得保存原始 artifact；既有 output path 或 decision artifact 不得被底層 CLI 覆寫，安全 demo wrapper 只能透過新路徑旋轉重跑。
 
 ## 成功標準 (Success Criteria) *(mandatory)*
 
@@ -162,7 +162,7 @@
 - **SC-001**: 對含有 high 或 critical 已知漏洞的 npm fixture，100% 的評估必須在安裝期展示前產生 `deny` 決策，且拒絕理由可追溯到 Snyk 證據；對只含 low/medium 且無 high/critical 的 Snyk fixture，測試必須驗證 Snyk gate 通過且決策摘要列出 residual risk。
 - **SC-002**: 對 Socket 證據顯示不健康或政策不合規的 npm fixture，100% 的評估必須在安裝期展示前產生 `deny` 決策，且拒絕理由可追溯到 Socket 證據。
 - **SC-003**: 在 OrbStack 就緒的展示環境中，受控 sandbox install 必須於 5 分鐘內完成或明確失敗，並產生足以判斷 containment 成敗的證據；每個 live scanner 必須設定 120 秒 timeout，fixture scanner 與 Supervisor report processing 必須各在 30 秒內完成或明確失敗；OrbStack 不可用時必須停止 live sandbox install demo，並改以已清理 fixture 與手動驗證說明呈現。
-- **SC-004**: 安裝期惡意 PoC 嘗試讀取未授權的合成 canary secret fixture 時，展示結果必須顯示讀取失敗，且至少保留一筆可審查的拒絕或失敗證據；測試不得使用真實宿主機秘密或敏感路徑內容。
+- **SC-004**: 安裝期惡意 PoC 或 sandbox exec probe 嘗試讀取 chmod-hardened synthetic canary secret fixture 時，展示結果必須顯示讀取失敗，且至少保留一筆可審查的拒絕或失敗證據；測試不得使用真實宿主機秘密或敏感路徑內容，且 artifact 不得保存 canary stdout 內容。
 - **SC-005**: 安裝期惡意 PoC 嘗試連線 `https://chainshield-egress-test.invalid/collect` 時，展示結果必須顯示預設拒絕所有 sandbox egress 造成外連在任何真實網路 egress 前失敗，且至少保留一筆可審查的拒絕或失敗證據。
 - **SC-006**: 每一份 Supervisor JSON 決策檔都必須可由自動化測試驗證 `run_id`、結果、主要理由、證據來源、缺失 gate 清單與下一步建議；`run_id` 必須可追溯到 demo config path、fixture identity、timestamp 與 evidence hash；`manual_review` 的下一步必須要求補齊 sanitized evidence/config 並重新執行 Supervisor，且不得提供人工直接改判為 `allow` 的路徑；若產生 Markdown 摘要，審查者必須能在 30 秒內辨識相同資訊。
 - **SC-007**: Demo 輸出與保存的 fixture/report 必須 100% 不包含真實秘密、憑證、SSH key、cloud profile 或未遮罩的個人環境檔案內容；sanitizer 命中時必須可由自動化測試驗證原始 artifact 未保存、decision 為 `manual_review`、且後續 scanner/sandbox 未執行。

@@ -160,13 +160,23 @@ python scripts/run-demo.py --config demo-config.live-sandbox.json --sandbox-only
 
 預期 evidence：
 
-- postinstall 嘗試讀取 sandbox allowlist 外的合成 canary secret 時失敗。
-- postinstall 嘗試連到合成測試目的地時，因 default-deny egress 失敗。
-- OpenShell deny log 或等價失敗證據同時包含 file read block 與 network egress block。
+- postinstall 嘗試讀取 chmod-hardened synthetic canary secret 時失敗。
+- postinstall 嘗試連到合成測試目的地時，因 OpenShell default-deny egress 失敗。
+- OpenShell deny log 或等價失敗證據同時包含 file read block 與 network egress block；live filesystem block 允許以 `manual_probe.permission_denied` 標記 chmod-hardened synthetic canary probe，不得誤稱為 OpenShell 原生 OCSF FILE deny。
 - 每筆 OpenShell containment evidence 至少包含 event type、blocked path 或 blocked target、policy/rule identifier、result、timestamp、artifact path、`source_kind` (`live` 或 `fixture`) 與 sanitized marker。
 - 若只取得其中一種 evidence，不得宣稱 containment 成功；decision 必須標示 evidence 不足或 `manual_review`。
 - OrbStack/OpenShell live sandbox install demo 必須在 5 分鐘內完成，或輸出 readiness、timeout 或 containment insufficiency failure evidence。
 - 任一 timeout 或 readiness failure 不得觸發 host `npm install` 或 host `postinstall`。
+
+### OpenShell 0.0.44 live 行為註記
+
+本機 OpenShell 0.0.44 驗證顯示：
+
+- `openshell sandbox create --upload` 不接受多個 `--upload`；demo 需先建立單一 bundle 再上傳。
+- `--upload` 可寫入的 `/tmp` 與 `/sandbox` 會被 OpenShell proxy mode baseline 放行，因此將 canary 放在這些路徑時，不會自然產生 filesystem deny。
+- `/home/sandbox` 與 `/var/tmp` 之類非 baseline 路徑無法透過 `--upload` 寫入，不能作為免 custom image 的 canary 放置點。
+- 本 PoC 不採用 custom OpenShell image；live filesystem block 改以 sandbox 內 `chmod 000` synthetic canary，再用 sandbox exec probe 驗證 permission denied。
+- 若 canary probe 意外可讀，artifact 只記錄 redacted 訊號，並輸出 `manual_review`；不得把 canary 內容寫入 reports。
 
 ### Live timeout 與 failure evidence
 
@@ -281,9 +291,21 @@ Phase 4 手動 sandbox 驗證路徑（當本機缺少 OpenShell/NemoClaw 或 liv
 - live sandbox install demo runtime 目標為 5 分鐘內完成；超時需保存 sanitized timeout/failure evidence，不得改用 host `npm install` 或未授權的一般 Docker runtime。
 - manual observation 只能作為說明性註記或 `manual_review` 依據；不得單獨滿足 `allow`。
 
+## Phase 7 live OpenShell 驗證紀錄（2026-05-27）
+
+本輪使用 `.venv/bin/python scripts/run-demo.py --config tmp/demo-live-sandbox-rerun5.json --sandbox-only` 驗證 OpenShell 0.0.44 live sandbox。靜態 gate 維持 `deny`，sandbox override 只展示 containment，不得把最終 decision 改為 `allow`。
+
+| Gate | Status | 主要 evidence |
+|------|--------|---------------|
+| Snyk | `deny` | fixture report 含 high/critical malicious-poc-pkg vulnerability。 |
+| Socket | `deny` | fixture report 含 unhealthy dependency health。 |
+| OpenShell | `pass` | live `network_egress` deny 來自 OPA log；live `filesystem_read` block 來自 chmod-hardened synthetic canary probe，`policy_rule_id="manual_probe.permission_denied"`。 |
+
+最新已知成功 run 範例：`run-20260527T171906573747Z-2f26c3f6ae03`，artifact 位於 `reports/sandbox/openshell-live-run-20260527T171906573747Z-2f26c3f6ae03.log`。此 artifact 為 runtime output，仍不得提交到 git。
+
 ## Phase 6 fixture-first 驗證紀錄（2026-05-27）
 
-本輪收尾驗證使用 `.venv/bin/python -m chainshield.cli evaluate --config <config>`，不需要 Snyk/Socket token，不啟動 host `npm install`，也不執行 live OpenShell sandbox。CLI/tool 可用性與旗標限制引用 `specs/001-orbstack-sandbox-gates/research.md` 的「Phase 2 本機工具與 hosted API 驗證紀錄（2026-05-27）」：本機未安裝 `snyk`、`socket`、`openshell`、`nemoclaw`，因此 live mode 必須走 unavailable/`manual_review` evidence 或 sanitized fixture fallback。
+本輪收尾驗證使用 `.venv/bin/python -m chainshield.cli evaluate --config <config>`，不需要 Snyk/Socket token，不啟動 host `npm install`，也不執行 live OpenShell sandbox。CLI/tool 可用性與旗標限制引用 `specs/001-orbstack-sandbox-gates/research.md` 的 Phase 2 初始紀錄：當時本機未安裝 `snyk`、`socket`、`openshell`、`nemoclaw`，因此該輪 live mode 必須走 unavailable/`manual_review` evidence 或 sanitized fixture fallback；後續 OpenShell 0.0.44 live 行為以 Phase 7 live OpenShell 驗證紀錄為準。
 
 | Config | Exit code | Decision | Runtime | 主要 evidence |
 |--------|-----------|----------|---------|---------------|

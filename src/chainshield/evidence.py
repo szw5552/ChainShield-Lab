@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -306,11 +307,56 @@ REQUIRED_OPENSHELL_EVENTS = {
     "network_egress": "egress block",
 }
 
+OCSF_NET_DENY_RE = re.compile(
+    r"^(?P<timestamp>\S+)\s+OCSF\s+NET:OPEN\s+\[(?P<severity>[A-Z]+)\]\s+DENIED\s+"
+    r"(?P<binary>\S+)\(\d+\)\s+->\s+(?P<host>[^:\s]+):(?P<port>\d+)\s+\[policy:(?P<policy>[^\]]*)",
+    re.IGNORECASE,
+)
+OCSF_FILE_DENY_RE = re.compile(
+    r"^(?P<timestamp>\S+)\s+OCSF\s+FILE:[A-Z_]+\s+\[(?P<severity>[A-Z]+)\]\s+DENIED\s+"
+    r"(?P<path>\S+).*\[policy:(?P<policy>[^\]]*)",
+    re.IGNORECASE,
+)
+
 
 def _parse_openshell_event(line: str, *, source_path: str | None, source_kind: str) -> dict[str, Any] | None:
-    if not line.strip():
+    stripped = line.strip()
+    if not stripped:
         return None
-    data = json.loads(line)
+    ocsf_net = OCSF_NET_DENY_RE.match(stripped)
+    if ocsf_net:
+        host = ocsf_net.group("host")
+        port = ocsf_net.group("port")
+        policy = (ocsf_net.group("policy") or "").strip() or "opa.denied"
+        scheme = "https" if port == "443" else "tcp"
+        return {
+            "event_type": "network_egress",
+            "blocked_path": None,
+            "blocked_target": f"{scheme}://{host}" if port == "443" else f"{host}:{port}",
+            "policy_rule_id": policy,
+            "result": "blocked",
+            "timestamp": ocsf_net.group("timestamp"),
+            "artifact_path": str(source_path or ""),
+            "source_kind": source_kind,
+            "sanitized": True,
+        }
+    ocsf_file = OCSF_FILE_DENY_RE.match(stripped)
+    if ocsf_file:
+        policy = (ocsf_file.group("policy") or "").strip() or "landlock.denied"
+        return {
+            "event_type": "filesystem_read",
+            "blocked_path": ocsf_file.group("path"),
+            "blocked_target": None,
+            "policy_rule_id": policy,
+            "result": "blocked",
+            "timestamp": ocsf_file.group("timestamp"),
+            "artifact_path": str(source_path or ""),
+            "source_kind": source_kind,
+            "sanitized": True,
+        }
+    if not stripped.startswith("{"):
+        return None
+    data = json.loads(stripped)
     if not isinstance(data, dict):
         raise ValueError("OpenShell event must be a JSON object")
     event_type = str(data.get("event_type") or data.get("type") or "")

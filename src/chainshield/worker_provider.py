@@ -15,6 +15,19 @@ from .config import DEFAULT_WORKER_TIMEOUT_SECONDS, WorkerProviderConfig
 
 DEFAULT_NEMOTRON_BASE_URL = "https://integrate.api.nvidia.com/v1"
 DEFAULT_NEMOTRON_MODEL = "nvidia/nemotron-3-nano-30b-a3b"
+NEMOTRON_MAX_TOKENS = 240
+NEMOTRON_SYSTEM_PROMPT = (
+    "Return ONLY valid minified JSON with exactly these keys: "
+    "status, finding_status, observations, missing_evidence, errors. "
+    "Use gate_result_summary as the source of truth; do not request artifact reads or tool execution. "
+    "Do not invent gates, evidence, or statuses that are not present in gate_result_summary. "
+    'Use status="pass" and finding_status="clear" when every supplied gate status is pass and no checklist item is missing. '
+    'Use status="manual_review" and finding_status="inconclusive" when evidence is incomplete. '
+    'For a clear result, the JSON shape is {"status":"pass","finding_status":"clear","observations":["sanitized evidence complete"],"missing_evidence":[],"errors":[]}. '
+    "observations, missing_evidence, and errors must be arrays of short sanitized strings. "
+    "Do not include markdown, extra keys, tool calls, command suggestions, shell steps, scanner steps, sandbox steps, "
+    "npm lifecycle instructions, postinstall instructions, or host execution requests."
+)
 TASK_PACKET_PATH = "reports/worker-task-packet.json"
 UNSAFE_WORKER_PATTERNS = [
     re.compile(r"\bnpm\s+(?:install|run|exec|pack)\b", re.I),
@@ -53,6 +66,7 @@ def build_worker_task_packet(
     artifact_refs: list[str],
     evidence_checklist: list[str],
     output_path: str | None,
+    gate_result_summary: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     packet = {
         "request_id": request_id,
@@ -60,6 +74,7 @@ def build_worker_task_packet(
         "provider_chain": ["nemotron_api", "codex_subagent", "claude_subagent", "manual_review"],
         "fallback_order_after_primary_failure": ["codex_subagent", "claude_subagent", "manual_review"],
         "artifact_refs": artifact_refs,
+        "gate_result_summary": gate_result_summary or [],
         "evidence_checklist": evidence_checklist,
         "output_path": output_path,
         "metadata": {
@@ -72,6 +87,22 @@ def build_worker_task_packet(
     if not result.safe:
         raise ArtifactWriteError("refusing to build unsanitized worker task packet: " + ", ".join(result.reasons))
     return packet
+
+
+def _worker_gate_result_summary(gate_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    summary: list[dict[str, Any]] = []
+    for item in gate_results:
+        summary.append(
+            {
+                "gate": item.get("gate"),
+                "status": item.get("status"),
+                "risk_level": item.get("risk_level"),
+                "source_kind": item.get("source_kind"),
+                "source_path": item.get("source_path"),
+                "reasons": [str(reason) for reason in item.get("reasons", [])],
+            }
+        )
+    return summary
 
 
 def validate_worker_output_boundary(output: Any) -> BoundaryValidationResult:
@@ -144,6 +175,22 @@ def _provider_model(provider: str) -> str:
     return "local-claude-chainshield-worker"
 
 
+def _nemotron_request_payload(packet: dict[str, Any], model: str) -> dict[str, Any]:
+    return {
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": NEMOTRON_SYSTEM_PROMPT,
+            },
+            {"role": "user", "content": json.dumps(packet, ensure_ascii=False, sort_keys=True)},
+        ],
+        "temperature": 0,
+        "max_tokens": NEMOTRON_MAX_TOKENS,
+        "response_format": {"type": "json_object"},
+    }
+
+
 def call_nemotron_api(packet: dict[str, Any], *, timeout_seconds: int) -> dict[str, Any]:
     api_key = os.environ.get("NVIDIA_API_KEY")
     if not api_key:
@@ -159,19 +206,7 @@ def call_nemotron_api(packet: dict[str, Any], *, timeout_seconds: int) -> dict[s
     if parsed_url.scheme != "https" or not parsed_url.netloc:
         return {"status": "failed", "finding_status": None, "errors": ["nemotron_invalid_base_url_scheme"]}
     model = os.environ.get("NEMOTRON_MODEL", DEFAULT_NEMOTRON_MODEL)
-    body = json.dumps(
-        {
-            "model": model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "Return a sanitized ChainShield worker evidence summary only. Do not request tool execution.",
-                },
-                {"role": "user", "content": json.dumps(packet, ensure_ascii=False, sort_keys=True)},
-            ],
-            "temperature": 0,
-        }
-    ).encode("utf-8")
+    body = json.dumps(_nemotron_request_payload(packet, model)).encode("utf-8")
     request = urllib.request.Request(
         f"{base_url}/chat/completions",
         data=body,
@@ -294,15 +329,20 @@ def run_worker_provider(
     input_artifacts = list(dict.fromkeys([*artifacts.get("reports", []), *artifacts.get("logs", [])]))
     checklist = [
         "Snyk and Socket evidence must pass or provide deterministic deny/manual_review reasons.",
-        "OpenShell evidence must include filesystem_read and network_egress blocks when sandbox ran.",
         "Worker finding_status must be clear to support allow; concern/inconclusive require manual_review.",
     ]
+    openshell_ran = any(item.get("gate") == "openshell" for item in gate_results)
+    if openshell_ran:
+        checklist.append("OpenShell evidence must include filesystem_read and network_egress blocks.")
+    else:
+        checklist.append("OpenShell evidence is not required because no openshell gate_result_summary entry is supplied.")
     packet = build_worker_task_packet(
         request_id=request_id,
         run_id=run_id,
         artifact_refs=input_artifacts,
         evidence_checklist=checklist,
         output_path=provider.output_path,
+        gate_result_summary=_worker_gate_result_summary(gate_results),
     )
     packet_path = task_packet_path_for_run(run_id)
     try:

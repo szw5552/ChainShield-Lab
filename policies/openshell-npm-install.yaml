@@ -4,8 +4,8 @@ version: 1
 filesystem_policy:
   include_workdir: false
   read_only:
-    - /workspace/fixtures/poc-app
-    - /workspace/fixtures/malicious-poc-pkg
+    - /tmp/chainshield-bundle/chainshield-fixtures/poc-app
+    - /tmp/chainshield-bundle/chainshield-fixtures/malicious-poc-pkg
   read_write:
     - /tmp/chainshield-npm-cache
 landlock:

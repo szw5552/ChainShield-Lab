@@ -50,8 +50,8 @@
 
 ## 邊界案例覆蓋 (Edge Case Coverage)
 
-- [x] CHK026 是否已定義 OrbStack/OpenShell 不可用、OpenShell file block 或 egress block 任一缺失、以及 containment evidence 欄位不完整時的需求結果？ [Edge Case, Spec §Edge Cases, Spec §FR-006, Spec §FR-009]
-- [x] CHK027 是否已定義 demo run 使用既有 output path 或 decision artifact 時的拒絕、`manual_review` 與不得覆寫既有 evidence 的需求？ [Edge Case, Spec §FR-004g, Spec §Edge Cases]
+- [x] CHK026 是否已定義 OrbStack/OpenShell 不可用、live chmod-hardened canary file block 或 OpenShell egress block 任一缺失、以及 containment evidence 欄位不完整時的需求結果？ [Edge Case, Spec §Edge Cases, Spec §FR-006, Spec §FR-009]
+- [x] CHK027 是否已定義 demo run 使用既有 output path 或 decision artifact 時，底層 CLI / artifact writer 的拒絕、`manual_review`、不得覆寫既有 evidence，以及 demo wrapper 可安全旋轉 output path 的需求？ [Edge Case, Spec §FR-004g, Spec §Edge Cases]
 - [x] CHK028 是否已定義安全路徑檢查涵蓋 parent traversal、home expansion、repository 外部路徑、敏感檔名樣式與 symlink escape 的需求？ [Edge Case, Spec §FR-004f, Tasks §T005]
 - [x] CHK029 是否已定義 live scanner 因登入、token、網路、服務不可用或 timeout 失敗時，何時可 fallback 到 fixture、何時必須 `manual_review`？ [Edge Case, Spec §FR-004b, Spec §SC-008]
 

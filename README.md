@@ -1,14 +1,34 @@
 # ChainShield Lab
 
-ChainShield Lab 是一個展示型 PoC，用來示範 AI-assisted npm supply-chain defense：在安裝 npm 套件前先用 Snyk 與 Socket 做 deterministic static gates，必要時再用 OrbStack/OpenShell sandbox 展示安裝期 containment，最後由 Supervisor 產生可追蹤的 `allow`、`deny` 或 `manual_review` 決策證據。
+## 為什麼做這個
 
-本專案的範圍刻意很小：三個 demo gates、檔案型 JSON/YAML artifacts、fixture-first 可重現展示，以及可選的 Nemotron/Codex/Claude Worker evidence summary。它不是 production CI/CD 平台、SOC/SIEM 整合，也不是通用惡意程式分析框架。
+過去 8 週，npm 供應鏈攻擊不是「會不會發生」的問題，是「**這禮拜輪到哪個 package**」的問題：
+
+- **2026/05/11 — TanStack 入侵**：42 個套件被植入惡意版本，`@tanstack/react-router` 每週 1200 萬下載，**OpenAI 內部員工機器也中標**。Microsoft 命名為 *Mini Shai-Hulud*。
+- **2026/05/19 — AntV / "Here We Go Again"**：阿里巴巴 AntV 套件群淪陷，攻擊者用偷到的 token **建了 2200 個 GitHub repo 公開贓物**，GitHub 撤了 6 萬多個 npm token 才壓下來。
+- **2026/05/22 — TrapDoor**：跨 npm/PyPI/Crates.io，**植入假的 `CLAUDE.md` 跟 `.cursorrules` 騙 AI coding assistant 幫攻擊者跑 secret scan**。
+- **2026/05/14 — node-ipc**：每週 1000 萬下載，偷 90 種 credential，並附帶 dead-man switch — 受害者撤 token 它就 `rm -rf ~/`。
+
+這些攻擊全部源於 2025/09 的 **Shai-Hulud worm** 開創的劇本：`npm install` 的瞬間，`postinstall` 在背景掃 `~/.aws/credentials`、`~/.npmrc`、env 變數，把 secret 傳到 webhook，再用偷到的 token 自我複製到該 maintainer 維護的其他套件 — 一個 install 動作，整條供應鏈淪陷。
+
+`event-stream`、`ua-parser-js`、`xz-utils`、Shai-Hulud、TanStack、AntV、TrapDoor — 同樣的劇本一直重演，因為現有工具大多在「**事後**」告訴你哪個版本有問題。問題是：`npm install` 在 advisory 發佈前就跑完了。
+
+ChainShield 把防線推到 install 之前與之中，核心採用 **NVIDIA 技術堆疊**：
+
+- **Install 之前**：Snyk + Socket 的 deterministic static gate 擋已知惡意，秒級反應、不靠 LLM 賭運氣。
+- **Install 之中** ⭐ **NVIDIA NemoClaw + OpenShell**：以 NVIDIA 的 NemoClaw 容器沙箱搭配 OpenShell policy DSL，阻擋 sandbox 內的 default-deny network egress，並用 chmod-hardened synthetic canary probe 驗證 install-time payload 讀不到 demo canary；即使 payload 動起來，也留在受控 sandbox evidence flow。
+- **判讀證據** ⭐ **NVIDIA Nemotron-3**：Nemotron-3 (nano-30b-a3b) 把 scanner 原始 output 整理成 reviewer 看得懂的 sanitized evidence summary，但**不取代** deterministic supervisor 規則。
+
+> NVIDIA stack 一覽：**NemoClaw**（sandbox runtime）+ **OpenShell**（policy 引擎）+ **Nemotron-3**（evidence summarization）。三者搭配 OrbStack 提供 host 隔離，組成完整的 install-time defense。
+
+整個專案是展示型 PoC：三個 demo gates、檔案型 JSON/YAML artifacts、fixture-first 可重現展示，以及可選的 Nemotron / Codex / Claude Worker evidence summary。它不是 production CI/CD 平台、SOC/SIEM 整合，也不是通用惡意程式分析框架 — 它是一個可以在 3 分鐘 demo 裡跑完、把上面三層防線一次秀完的最小可信原型。
+
 
 ## Demo Gates
 
 1. **Snyk Gate**：讀取 Snyk report；若 dependency tree 出現 `high` 或 `critical` vulnerability，Supervisor 產生 `deny`。
 2. **Socket Gate**：讀取 Socket report；若 dependency health、organization policy、malware 或 supply-chain risk 命中，Supervisor 產生 `deny`。
-3. **OpenShell Gate**：只在受控 sandbox 展示路徑中檢查安裝期 containment；file read block 與 network egress block 皆完整時，才可作為 containment evidence。
+3. **OpenShell Gate**：只在受控 sandbox 展示路徑中檢查安裝期 containment；file read block 與 network egress block 皆完整時，才可作為 containment evidence。Live mode 的 egress block 來自 OpenShell OPA deny log；file-read block 以 chmod-hardened synthetic canary probe 誠實標記為 `manual_probe.permission_denied`。
 
 ## 架構概念
 
@@ -55,7 +75,7 @@ Demo Config
 - OrbStack 不可用時，live sandbox demo 會停止並回報 `manual_review`；不得 fallback 到宿主機或未授權的一般 Docker runtime。
 - PoC fixture 只使用 synthetic canary secret 與 synthetic egress target，不使用真實秘密、SSH key、cloud profile 或個人 `.env`。
 - Snyk、Socket、NVIDIA API token 只能放在 shell environment 或工具自己的安全登入狀態中，不得寫入 config、report 或 git。
-- Runtime outputs 寫入 `reports/`，且 artifact path 已存在時 CLI 會拒絕覆寫，請改用新的 output path。
+- Runtime outputs 寫入 `reports/`；`scripts/run-demo.py` 會在 output path 已存在時自動旋轉路徑，底層 CLI 仍保留拒絕覆寫的安全邊界。
 
 ## 環境需求
 
@@ -118,6 +138,14 @@ python scripts/run-demo.py --config fixtures/configs/demo-live-sandbox.json --sa
 ```
 
 任一 readiness check 不足時，CLI 必須輸出 `manual_review` 或 containment insufficiency evidence，且不得執行 host `npm install`。
+
+目前 live OpenShell 0.0.44 / OrbStack 路徑的已驗證行為：
+
+- `--upload` 只能使用單一來源；demo wrapper 會先建立 `/tmp/chainshield-bundle/...` 結構再上傳到 sandbox。
+- OpenShell OPA policy 穩定產生 `network_egress` deny evidence，例如 `registry.npmjs.org` 與 `chainshield-egress-test.invalid`。
+- OpenShell proxy mode 會 baseline 放行可 upload 的 `/tmp`/`/sandbox` 路徑；因此 demo 不宣稱原生 OCSF FILE deny。
+- Synthetic canary 在 live install 前會被 `chmod 000` harden；後續 sandbox exec probe 若得到 permission denied，會產生 `filesystem_read` evidence，`policy_rule_id="manual_probe.permission_denied"`。
+- Sandbox override 只展示 containment；即使 OpenShell gate `pass`，static Snyk/Socket `deny` 仍維持最終 `deny`。
 
 ## Worker Provider Demo
 

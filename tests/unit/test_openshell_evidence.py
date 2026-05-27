@@ -49,3 +49,20 @@ def test_openshell_fixture_log_normalizes_to_pass():
     assert evidence["status"] == "pass"
     assert any("file read" in reason.lower() for reason in evidence["reasons"])
     assert any("egress" in reason.lower() for reason in evidence["reasons"])
+
+
+def test_openshell_ocsf_network_deny_counts_as_egress_event():
+    evidence = normalize_openshell_log_data(
+        "\n".join(
+            [
+                '{"event_type":"filesystem_read","blocked_path":"/tmp/chainshield-canary/canary-secret.txt","policy_rule_id":"fs.default_deny","result":"blocked","timestamp":"2026-05-27T00:00:00Z","source_kind":"live","sanitized":true}',
+                "2026-05-27T16:36:22.089Z OCSF NET:OPEN [MED] DENIED /usr/bin/node(73) -> chainshield-egress-test.invalid:443 [policy:chainshield_default_deny engine:opa]",
+            ]
+        ),
+        source_path="reports/sandbox/live.log",
+        run_id="run-openshell-ocsf",
+        source_kind="live",
+    )
+
+    assert evidence["status"] == "pass"
+    assert {event["event_type"] for event in evidence["containment_events"]} == {"filesystem_read", "network_egress"}
